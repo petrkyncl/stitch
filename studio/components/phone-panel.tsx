@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type PointerEvent } from "react";
-import { api, ENGINE, type Device } from "@/lib/engine";
+import { api, VIDEO, type Device } from "@/lib/engine";
 
 // Live phone video you can drive with the mouse: click = tap, drag = swipe.
 export function PhonePanel({ device, epoch }: { device: Device | null; epoch: number }) {
@@ -39,7 +39,7 @@ export function PhonePanel({ device, epoch }: { device: Device | null; epoch: nu
         >
         {/* An MJPEG stream; next/image cannot optimize or proxy a never-ending response. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`${ENGINE}/api/stream.mjpg?c=${epoch}`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
+        <img src={`${VIDEO}?c=${epoch}`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">

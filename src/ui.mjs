@@ -25,9 +25,14 @@ export function compact(nodes) {
 }
 
 // A selector describes a node by what stays stable: its resource id and a fragment of its label.
-export function selectorFor(node, hint = '') {
-  // An input's label is whatever is typed in it, so it says nothing stable; its resource id does.
-  if (node.editable && node.resourceId) return { resourceId: node.resourceId, labelHas: hint, cls: node.cls };
+// `nodes` (the screen) lets an input be told apart from siblings that share its resource id.
+export function selectorFor(node, hint = '', nodes = []) {
+  // An input's label is usually whatever is typed in it, so its resource id is the stable part. When several inputs
+  // share that id (Samsung's hour and minute pickers), the non-numeric part of the label ("Hour") tells them apart.
+  if (node.editable && node.resourceId) {
+    const twins = nodes.filter(n => n !== node && n.editable && n.resourceId === node.resourceId).length;
+    return { resourceId: node.resourceId, labelHas: hint || (twins ? stableLabel(node) : ''), cls: node.cls };
+  }
   return {
     resourceId: node.resourceId || '',
     labelHas: hint || stableLabel(node),

@@ -1,5 +1,7 @@
 // Client for the Stitch engine (the Node process that holds the phone).
 export const ENGINE = process.env.NEXT_PUBLIC_ENGINE || "http://localhost:4400";
+// Video on its own host and port, so it never queues behind the event streams of other open tabs.
+export const VIDEO = process.env.NEXT_PUBLIC_VIDEO || "http://127.0.0.1:4401/stream.mjpg";
 
 export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number; cost: number; ms: number };
 

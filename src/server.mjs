@@ -101,3 +101,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => console.log(`Stitch engine on http://localhost:${PORT}, studio at ${STUDIO_ORIGIN}`));
+
+// The live video gets its own port: browsers allow only six open connections per host, and every studio tab already
+// keeps the event stream open, so with a few tabs the video would wait forever on the shared port.
+const STREAM_PORT = Number(process.env.STREAM_PORT || PORT + 1);
+http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (new URL(req.url, 'http://localhost').pathname === '/stream.mjpg') return serveStream(req, res);
+  res.writeHead(404); res.end();
+}).listen(STREAM_PORT, '127.0.0.1', () => console.log(`Stitch video on http://127.0.0.1:${STREAM_PORT}/stream.mjpg`));

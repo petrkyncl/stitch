@@ -176,14 +176,19 @@ export async function typeInto(node, text) {
 
 // Enter/Send/Search on the focused field, through the keyboard so the app's own action fires.
 export async function pressEnter() {
+  // Three ways to submit, each checked: a submitted field gives up focus or the screen changes.
+  const focusedField = async () => (await observe()).nodes.find(n => n.focused && n.editable);
+  const before = await focusedField().catch(() => null);
+  const submitted = async () => {
+    await sleep(450);
+    const now = await focusedField().catch(() => null);
+    return !before || !now || now.resourceId !== before.resourceId || label(now) !== label(before);
+  };
   if (await handsAvailable()) {
-    // Native accessibility submit on the focused field first, then the keyboard's editor action.
-    try {
-      const screen = await observeHands();
-      const field = screen.nodes.find(n => n.focused && n.editable);
-      if (field) { await hands('/node', { id: field.id, gen: field.gen, action: 'ime_enter' }); return; }
-    } catch { /* not supported by this field */ }
-    try { await hands('/ime/enter'); return; } catch { /* no keyboard */ }
+    if (before) {
+      try { await hands('/node', { id: before.id, gen: before.gen, action: 'ime_enter' }); if (await submitted()) return; } catch { /* not supported */ }
+    }
+    try { await hands('/ime/enter'); if (await submitted()) return; } catch { /* no keyboard */ }
   }
   await adb(['shell', 'input', 'keyevent', '66']);
 }

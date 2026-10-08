@@ -173,7 +173,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
       case 'fail':
         throw new Error(`Explorer gave up: ${d.why}`);
       case 'tap': {
-        const step = { op: 'tap', sel: selectorFor(node), label: phone.label(node) };
+        const step = { op: 'tap', sel: selectorFor(node, '', screen.nodes), label: phone.label(node) };
         if (isExternalLabel(phone.label(node))) {
           // The agent may learn this step but never fire it on its own.
           trace.push({ ...step, external: true });
@@ -191,7 +191,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
       case 'long_press':
         say(`long press ${nameOf(node)}`);
         await phone.nodeAction(node, 'long_click');
-        trace.push({ op: 'long_press', sel: selectorFor(node), label: phone.label(node) });
+        trace.push({ op: 'long_press', sel: selectorFor(node, '', screen.nodes), label: phone.label(node) });
         history.push(`long pressed ${nameOf(node)}`);
         await phone.sleep(600);
         break;
@@ -199,7 +199,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         const text = String(d.text ?? '');
         say(`type "${text}" into ${nameOf(node)}`);
         const via = await phone.typeInto(node, text);
-        trace.push({ op: 'type', sel: selectorFor(node), text, label: phone.label(node) });
+        trace.push({ op: 'type', sel: selectorFor(node, '', screen.nodes), text, label: phone.label(node) });
         history.push(`typed "${text}" into ${nameOf(node)} (${via})`);
         await phone.sleep(250);
         break;
@@ -223,7 +223,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         say(`scroll ${d.direction}${node ? ` ${nameOf(node)}` : ''}`);
         if (node) await phone.nodeAction(node, d.direction === 'up' ? 'scroll_backward' : 'scroll_forward').catch(() => phone.scroll(d.direction));
         else await phone.scroll(d.direction);
-        trace.push({ op: 'scroll', direction: d.direction, sel: node ? selectorFor(node) : null });
+        trace.push({ op: 'scroll', direction: d.direction, sel: node ? selectorFor(node, '', screen.nodes) : null });
         history.push(`scrolled ${d.direction}`);
         await phone.sleep(450);
         break;

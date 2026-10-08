@@ -110,5 +110,7 @@ export async function run(cap, params, { emit, allowExternal = false }) {
     if (screenHasText(screen.nodes, want)) return { ok: true, verified: want };
     await phone.sleep(300);
   }
+  // The new item may sit below the visible part of a long list (a person with many alarms); look through it.
+  if (await phone.findText(want, pkg)) return { ok: true, verified: want };
   return { ok: false, irreversible, step: cap.steps.length, reason: `"${want}" is not on screen after the last step` };
 }

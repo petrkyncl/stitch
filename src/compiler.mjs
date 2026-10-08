@@ -90,6 +90,9 @@ const TOOL = {
   },
 };
 
+// Steps that carry the input or the result are never dropped, whatever the model says.
+const KEEP = new Set(['launch', 'type', 'enter', 'find', 'extract']);
+
 // Tool arguments arrive as arrays; the rest of the code wants maps.
 function shape(raw) {
   return {
@@ -116,7 +119,7 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
       const program = trace
         .map((s, i) => (['type', 'find', 'extract'].includes(s.op) ? { ...s, text: spec.typed[String(i)] } : s))
         .map((s, i) => (spec.targets[String(i)] && s.sel ? { ...s, sel: { ...s.sel, labelHas: spec.targets[String(i)], templated: true } } : s))
-        .filter((st, i) => i === 0 || st.op === 'extract' || !spec.drop.has(i));
+        .filter((st, i) => i === 0 || KEEP.has(st.op) || !spec.drop.has(i));
       const manifest = { ...manifestFor(program), app: trace[0]?.pkg };
       const { drop, drop_steps, typed, targets, ...clean } = spec;
       if (!expect) {
