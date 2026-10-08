@@ -152,7 +152,7 @@ function autofix(template, params, wanted, contains = false) {
 }
 
 // Local checks, no model: the capability must reproduce exactly what was typed for the original task.
-function validate(spec, task, trace, expect) {
+export function validate(spec, task, trace, expect) {
   const problems = [];
   if (!spec.name || !/^[a-z0-9_]+\.[a-z0-9_]+$/.test(spec.name)) problems.push('name must look like app.verb_object');
   const params = (spec.params || []).map(p => p.name);
