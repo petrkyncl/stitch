@@ -107,6 +107,8 @@ class HandsService : AccessibilityService() {
         "/tap" -> JSONObject().put("ok", tapAt(body.getDouble("x").toFloat(), body.getDouble("y").toFloat()))
         "/swipe" -> JSONObject().put("ok", swipe(body))
         "/global" -> global(body.optString("action"))
+        "/launch" -> launch(body.optString("pkg"))
+        "/device" -> device()
         "/node" -> nodeAction(body)
         "/apps" -> apps()
         "/ime" -> {
@@ -199,6 +201,37 @@ class HandsService : AccessibilityService() {
     }
 
     // Apps with a launcher icon, with the name a person sees under the icon.
+    // Open an app the way its home screen icon does, on a fresh task so it starts on its default screen.
+    // An accessibility service may start activities from the background, so no shell is needed.
+    private fun launch(pkg: String): JSONObject {
+        if (android.os.Build.VERSION.SDK_INT >= 31) performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+        val intent = packageManager.getLaunchIntentForPackage(pkg) ?: error("$pkg has no launcher entry")
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        startActivity(intent)
+        // Answer once its window is in front, so the caller reads the app and not the screen before it.
+        val until = System.currentTimeMillis() + 5000
+        while (System.currentTimeMillis() < until) {
+            if (windows.any { it.root?.packageName?.toString() == pkg && it.isActive }) return JSONObject().put("ok", true)
+            Thread.sleep(60)
+        }
+        return JSONObject().put("ok", true).put("waited", false)
+    }
+
+    // What the studio shows about the phone.
+    private fun device(): JSONObject {
+        val battery = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+        val level = battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = battery?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val plugged = (battery?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        val size = android.graphics.Point()
+        @Suppress("DEPRECATION")
+        (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealSize(size)
+        return JSONObject().put("ok", true)
+            .put("model", android.os.Build.MODEL).put("android", android.os.Build.VERSION.RELEASE)
+            .put("battery", if (level >= 0) level * 100 / scale else JSONObject.NULL).put("charging", plugged)
+            .put("width", size.x).put("height", size.y)
+    }
+
     private fun apps(): JSONObject {
         val intent = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
         val seen = HashSet<String>()

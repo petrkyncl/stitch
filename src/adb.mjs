@@ -244,13 +244,14 @@ export async function key(name) {
   if ((name === 'back' || name === 'home') && await handsAvailable()) {
     try { await hands('/global', { action: name }); return; } catch { /* use keyevent */ }
   }
-  const codes = { back: '4', home: '3', enter: '66' };
+  if (name === 'enter') return pressEnter();
+  const codes = { back: '4', home: '3' };
   await adb(['shell', 'input', 'keyevent', codes[name] || name]);
 }
 
 export async function scroll(direction = 'down') {
   const [x, a, b] = direction === 'down' ? [540, 1700, 700] : [540, 700, 1700];
-  await adb(['shell', 'input', 'swipe', String(x), String(a), String(x), String(b), '300']);
+  await swipeAt(x, a, x, b, 300);
 }
 
 // Installed apps with the names people see, from Hands; package names only when Hands is not running.
@@ -335,14 +336,6 @@ export async function launch(pkg) {
   return launchFresh(pkg);
 }
 
-async function launchPlain(pkg) {
-  await adb(['shell', 'cmd', 'statusbar', 'collapse']).catch(() => {}); // an open notification shade would hide the app
-  const out = await adb(['shell', 'cmd', 'package', 'resolve-activity', '--brief', '-c', 'android.intent.category.LAUNCHER', pkg]);
-  const comp = out.trim().split('\n').pop().trim();
-  if (!comp.includes('/')) throw new Error(`No launcher activity for ${pkg}`);
-  await adb(['shell', 'am', 'start', '-S', '-W', '-n', comp]);
-}
-
 export async function screenshot() {
   return adb(['exec-out', 'screencap', '-p'], { binary: true });
 }
@@ -372,6 +365,12 @@ export async function deviceInfo() {
       info.serial = line.split(/\s+/)[0];
       info.transport = /usb:/.test(line) ? 'USB' : /:\d+$/.test(info.serial) ? 'Wi-Fi' : 'ADB';
       info.model = (line.match(/model:(\S+)/) || [])[1]?.replace(/_/g, ' ');
+      const fromHands = await handsAvailable() && await hands('/device').catch(() => null);
+      if (fromHands) {
+        Object.assign(info, { android: fromHands.android, battery: fromHands.battery, charging: fromHands.charging, width: fromHands.width, height: fromHands.height, hands: true });
+        deviceCache = { at: Date.now(), info };
+        return info;
+      }
       const [release, battery, size] = await Promise.all([
         adb(['shell', 'getprop', 'ro.build.version.release']),
         adb(['shell', 'dumpsys', 'battery']),
@@ -433,6 +432,10 @@ export async function settle(pkg = '', maxMs = 2000) {
 
 // Fresh start that also clears the app's back stack, so it opens on its default screen, not where it was left.
 export async function launchFresh(pkg) {
+  // Hands opens it like the home screen icon does. The shell is only the fallback when Hands is not running.
+  if (await handsAvailable()) {
+    try { await hands('/launch', { pkg }); return; } catch { /* fall back to the shell */ }
+  }
   await adb(['shell', 'cmd', 'statusbar', 'collapse']).catch(() => {});
   // Start it the way the home screen does (MAIN + LAUNCHER intent for the package), so apps whose launcher entry is an
   // activity alias, like YouTube Studio, open too. NEW_TASK | CLEAR_TASK puts it on its default screen.

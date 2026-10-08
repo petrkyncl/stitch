@@ -130,6 +130,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
 
   const trace = [{ op: 'launch', pkg }];
   const history = [];
+  let extractFailures = 0;
   let current = pkg;
   let lastPrint = '';
   let lastAct = '';
@@ -267,9 +268,13 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         let rules;
         try {
           rules = await defineExtractor({ meter, task, fields: d.fields, rows });
-        } catch {
-          history.push(`the rows on this screen do not contain ${d.fields.join(', ') || 'the requested data'}; they are probably search suggestions. Press enter to show the real results, then extract`);
-          say('extract: these rows are not the results');
+        } catch (e) {
+          // Say exactly what was missing and show what the rows do contain, so the next try asks for columns that exist.
+          extractFailures += 1;
+          const sample = rows.slice(0, 2).map(r => r.join(' | ')).join(' / ').slice(0, 300);
+          if (extractFailures >= 3) throw new Error(`Could not extract ${d.fields.join(', ')}: ${e.message}`);
+          history.push(`extract failed: ${e.message}. The rows here read like: ${sample}. Ask only for columns these rows show, or if they are search suggestions press enter first`);
+          say(`extract: ${e.message}`);
           break;
         }
         emit('step', { kind: 'explore', text: `columns: ${rules.fields.map(f => f.name).join(', ')}`, meter: meter.snapshot() });

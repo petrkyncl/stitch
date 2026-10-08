@@ -31,8 +31,17 @@ export function Chat({ runs, live, sessions, now, pending, onDecide, capabilitie
     ...sessions.map(s => ({ kind: "session" as const, ...s })),
   ].sort((a, b) => (a.kind === "run" ? a.run.at : a.at) - (b.kind === "run" ? b.run.at : b.at));
 
+  // Follow new output only while the reader is at the bottom; scrolled up to read, they stay where they are.
+  const stick = useRef(true);
+  useEffect(() => {
+    const box = end.current?.closest(".overflow-y-auto");
+    if (!box) return;
+    const onScroll = () => { stick.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120; };
+    box.addEventListener("scroll", onScroll, { passive: true });
+    return () => box.removeEventListener("scroll", onScroll);
+  }, []);
   const liveCount = live?.events.length ?? 0;
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [turns.length, liveCount, pending]);
+  useEffect(() => { if (stick.current) end.current?.scrollIntoView({ block: "end" }); }, [turns.length, liveCount, pending]);
 
   if (!turns.length) {
     return (
@@ -99,7 +108,7 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
 
         {run.data && run.data.length > 0 && <DataTable rows={run.data} name={run.task} />}
         <Filmstrip events={run.events} live={live} />
-        <Steps events={run.events} open={live} />
+        <Steps events={run.events} />
         {waiting && ask?.pending && <Permission pending={ask.pending} onDecide={ask.onDecide} />}
       </div>
       </div>
@@ -142,10 +151,10 @@ function Meta({ value, label, accent }: { value: string; label: string; accent?:
   );
 }
 
-function Steps({ events, open }: { events: RunEvent[]; open: boolean }) {
+// The last three steps, the rest on request, so a running task does not grow the chat line by line.
+function Steps({ events }: { events: RunEvent[] }) {
   const [expanded, setExpanded] = useState(false);
-  const show = open || expanded;
-  const visible = show ? events : events.slice(-3);
+  const visible = expanded ? events : events.slice(-3);
   if (!events.length) return null;
   return (
     <div className="flex flex-col gap-2 border-t border-line pt-3">
@@ -158,7 +167,7 @@ function Steps({ events, open }: { events: RunEvent[]; open: boolean }) {
           </li>
         ))}
       </ol>
-      {!open && events.length > 3 && (
+      {events.length > 3 && (
         <button type="button" onClick={() => setExpanded(x => !x)} className="self-start font-mono text-xs text-muted underline-offset-4 hover:text-flesh hover:underline">
           {expanded ? "Show fewer steps" : `Show all ${events.length} steps`}
         </button>
