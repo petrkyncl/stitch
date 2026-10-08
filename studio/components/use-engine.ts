@@ -12,6 +12,7 @@ export function useEngine() {
   const [device, setDevice] = useState<Device | null>(null);
   const [offline, setOffline] = useState(false);
   const [sessions, setSessions] = useState<{ session: number; at: number; capabilities: number }[]>([]);
+  const [epoch, setEpoch] = useState(0); // bumps on every (re)connect, so the video reconnects after an engine restart
   const [now, setNow] = useState(0); // set on the client only, the clock is meaningless during prerender
   const liveRef = useRef<Run | null>(null);
 
@@ -34,32 +35,45 @@ export function useEngine() {
     setLive(liveRef.current);
   };
 
+  // Live events. On any error the stream is rebuilt after a second, so an engine restart heals by itself.
   useEffect(() => {
-    const es = new EventSource(ENGINE + "/api/events");
-    es.onerror = () => setOffline(true);
-    es.onopen = () => { setOffline(false); refresh(); };
-    es.onmessage = e => {
-      const ev: EngineEvent = JSON.parse(e.data);
-      const meter = ev.meter ?? EMPTY;
-      switch (ev.type) {
-        case "task":
-          liveRef.current = { id: ev.id || String(ev.at), session: ev.session ?? 0, task: ev.task || "", at: ev.at, events: [], ...EMPTY };
-          setLive(liveRef.current);
-          setState(s => (s ? { ...s, busy: true } : s));
-          break;
-        case "session":
-          setSessions(list => [...list, { session: ev.session ?? 0, at: ev.at, capabilities: ev.capabilities ?? 0 }]);
-          refresh();
-          break;
-        case "run":
-        case "registry":
-          refresh();
-          break;
-        default:
-          update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, frame: ev.frame, at: ev.at }] }));
-      }
+    let es: EventSource | null = null;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let closed = false;
+    const connect = () => {
+      es = new EventSource(ENGINE + "/api/events");
+      es.onopen = () => { setOffline(false); setEpoch(e => e + 1); refresh(); };
+      es.onerror = () => {
+        setOffline(true);
+        es?.close();
+        if (!closed) retry = setTimeout(connect, 1000);
+      };
+      es.onmessage = e => {
+        const ev: EngineEvent = JSON.parse(e.data);
+        const meter = ev.meter ?? EMPTY;
+        switch (ev.type) {
+          case "task":
+            liveRef.current = { id: ev.id || String(ev.at), session: ev.session ?? 0, task: ev.task || "", at: ev.at, events: [], ...EMPTY };
+            setLive(liveRef.current);
+            setState(s => (s ? { ...s, busy: true } : s));
+            break;
+          case "session":
+            setSessions(list => [...list, { session: ev.session ?? 0, at: ev.at, capabilities: ev.capabilities ?? 0 }]);
+            refresh();
+            break;
+          case "run":
+          case "registry":
+            refresh();
+            break;
+          default:
+            update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, frame: ev.frame, at: ev.at }] }));
+        }
+      };
     };
-    return () => es.close();
+    connect();
+    // Safety net: if an event was missed, the next poll brings the state back in line.
+    const poll = setInterval(() => { if (!liveRef.current) refresh(); }, 5000);
+    return () => { closed = true; clearTimeout(retry); clearInterval(poll); es?.close(); };
   }, [refresh]);
 
   // Device status every few seconds; a ticking clock for the run in progress.
@@ -74,5 +88,5 @@ export function useEngine() {
     return () => { stop = true; clearInterval(t); clearInterval(tick); };
   }, []);
 
-  return { state, live, device, offline, sessions, now, refresh };
+  return { state, live, device, offline, sessions, now, epoch, refresh };
 }

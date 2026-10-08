@@ -10,7 +10,7 @@ import { Insights } from "./insights";
 const EXAMPLES = ["Set an alarm for 7:14", "Set an alarm for 6:30", "Wake me up at 5:45"];
 
 export default function Studio() {
-  const { state, live, device, offline, sessions, now, refresh } = useEngine();
+  const { state, live, device, offline, sessions, now, epoch, refresh } = useEngine();
   const [task, setTask] = useState("");
   const [error, setError] = useState("");
   const busy = state?.busy ?? false;
@@ -67,7 +67,7 @@ export default function Studio() {
         </section>
 
         <section className="flex min-h-[640px] flex-col lg:min-h-0" aria-label="Phone">
-          <PhonePanel device={device} />
+          <PhonePanel device={device} epoch={epoch} />
         </section>
 
         <section className="min-h-0 overflow-y-auto lg:col-span-2 2xl:col-span-1" aria-label="Cost and capabilities">

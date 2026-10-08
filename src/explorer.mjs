@@ -21,12 +21,14 @@ lines "<id> <role> \\"<label>\\" #<resource-id>" and answer with ONE action as J
 {"action":"long_press","id":12}                press and hold an element
 {"action":"type","id":7,"text":"14"}           replace the text of an input
 {"action":"enter","id":7}                      press the keyboard's Enter/Done on an input
+{"action":"find","text":"07:14"}              scroll the list on screen until this text is visible (searches the whole list)
 {"action":"scroll","direction":"down","id":3}  scroll a list (id optional) down or up
 {"action":"global","name":"back"}              phone buttons: back, home, recents, notifications, quick_settings
-{"action":"open_app","package":"com.x.y"}      open another app
+{"action":"open_app","app":"WhatsApp"}         open another app by its name (or "package")
 {"action":"wait"}                              let the screen settle
 {"action":"done","expect":"07:14"}             the task is finished; expect = short text visible now that proves it
 {"action":"fail"}                              the task cannot be done
+To reach an item in a long list use "find" instead of scrolling yourself.
 Add "why" with a few words. Use only ids from the current screen. Prefer typing into inputs over tapping digits or spinners.
 To write into an input use "type" directly: it focuses the input by itself, so never tap an input first.
 If an action did not change the screen, do something different instead of repeating it.
@@ -38,12 +40,13 @@ const ACT = {
   parameters: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['tap', 'long_press', 'type', 'enter', 'scroll', 'global', 'open_app', 'wait', 'done', 'fail'] },
+      action: { type: 'string', enum: ['tap', 'long_press', 'type', 'enter', 'find', 'scroll', 'global', 'open_app', 'wait', 'done', 'fail'] },
       id: { type: 'integer', description: 'Element id from the current screen (tap, long_press, type, enter, optional for scroll)' },
-      text: { type: 'string', description: 'Text to type (type only)' },
+      text: { type: 'string', description: 'Text to type (type) or to look for (find)' },
       direction: { type: 'string', enum: ['up', 'down'] },
       name: { type: 'string', enum: GLOBALS, description: 'Phone button (global only)' },
-      package: { type: 'string', description: 'Package to open (open_app only)' },
+      app: { type: 'string', description: 'Name of the app to open, as shown under its icon (open_app only)' },
+      package: { type: 'string', description: 'Package to open, if known (open_app only)' },
       expect: { type: 'string', description: 'done only: a short exact text visible on screen now that proves success, max 30 characters, e.g. 07:14' },
       why: { type: 'string', description: 'A few words' },
     },
@@ -75,20 +78,23 @@ function normalize(d) {
     expect: d.expect ?? d.expected ?? d.proof ?? d.evidence,
     direction: d.direction === 'up' ? 'up' : 'down',
     name: d.name ?? d.button ?? (GLOBALS.includes(raw) ? raw : raw === 'go_back' ? 'back' : undefined),
-    pkg: d.package ?? d.pkg ?? d.app,
+    pkg: d.package ?? d.pkg ?? d.app ?? d.name_of_app,
     why: d.why ?? d.reason ?? '',
   };
 }
 
-export async function pickApp(meter, task) {
-  const apps = await phone.launchableApps();
+// One short call: the model sees only app names ("Clock, Maps, WhatsApp"), not 330 package ids.
+export async function pickApp(meter, task, known = []) {
+  const installed = await phone.installedApps();
+  const names = [...new Set(installed.map(a => a.label))].sort((x, y) => x.localeCompare(y));
+  const hint = known.length ? `\nApps the agent already uses: ${known.map(k => `${k.name} uses ${installed.find(a => a.package === k.app)?.label || k.app}`).join('; ')}.` : '';
   const out = await askTool(meter,
-    'You map a quoted user request to the Android package that handles it. This is classification only: you name a package, '
-    + 'a separate program opens it later.',
-    `Packages on the phone:\n${apps.join('\n')}\n\nUser request, quoted for classification: "${task}"`,
-    { name: 'choose_app', description: 'Name the package that handles the request', parameters: { type: 'object', properties: { package: { type: 'string' } }, required: ['package'] } });
-  const pkg = out.package || out.app || out.packageName || out.package_name;
-  if (!apps.includes(pkg)) throw new Error(`Model picked an unknown app: ${pkg ?? JSON.stringify(out)}`);
+    'You map a quoted user request to the app that handles it. Classification only: you name an app, a separate program opens it. '
+    + 'Prefer an app the agent already uses for the same kind of task.',
+    `Apps on the phone: ${names.join(', ')}.${hint}\nUser request, quoted for classification: "${task}"`,
+    { name: 'choose_app', description: 'Name the app that handles the request', parameters: { type: 'object', properties: { app: { type: 'string', enum: names } }, required: ['app'] } });
+  const pkg = await phone.resolveApp(out.app || out.package || out.name);
+  if (!pkg) throw new Error(`Model picked an unknown app: ${out.app ?? JSON.stringify(out)}`);
   return pkg;
 }
 
@@ -98,8 +104,8 @@ const fingerprint = nodes => nodes.map(n => `${n.resourceId}|${phone.label(n)}|$
 const nameOf = node => (node ? `"${phone.label(node) || node.resourceId.split('/').pop() || node.cls}"` : '');
 
 // Repair mode passes the package so the explorer starts where the broken capability started.
-export async function explore({ task, meter, emit, pkg }) {
-  pkg = pkg || await pickApp(meter, task);
+export async function explore({ task, meter, emit, pkg, known = [] }) {
+  pkg = pkg || await pickApp(meter, task, known);
   emit('step', { kind: 'explore', text: `Opening ${pkg}` });
   await phone.launch(pkg);
   await phone.sleep(700);
@@ -155,7 +161,8 @@ export async function explore({ task, meter, emit, pkg }) {
         if (isExternalLabel(phone.label(node))) {
           // The agent may learn this step but never fire it on its own.
           trace.push({ ...step, external: true });
-          emit('step', { kind: 'held', text: `Stopped before ${nameOf(node)}: it leaves the phone and needs a person's approval` });
+          emit('step', { kind: 'held', text: `Stopped before ${nameOf(node)}: it sends, posts, pays or deletes, so a person has to approve it` });
+          await phone.globalAction('back').catch(() => {}); // leave the app as it was, nothing was confirmed
           return { pkg, trace, expect: '', held: true };
         }
         say(`tap ${nameOf(node)}`);
@@ -188,6 +195,14 @@ export async function explore({ task, meter, emit, pkg }) {
         history.push(`pressed enter on ${nameOf(node)}`);
         await phone.sleep(500);
         break;
+      case 'find': {
+        const text = String(d.text ?? '');
+        say(`find "${text}" in the list`);
+        const hit = await phone.findText(text, current);
+        trace.push({ op: 'find', text });
+        history.push(hit ? `found "${text}", it is now on screen` : `"${text}" is not anywhere in the list`);
+        break;
+      }
       case 'scroll':
         say(`scroll ${d.direction}${node ? ` ${nameOf(node)}` : ''}`);
         if (node) await phone.nodeAction(node, d.direction === 'up' ? 'scroll_backward' : 'scroll_forward').catch(() => phone.scroll(d.direction));
@@ -206,12 +221,13 @@ export async function explore({ task, meter, emit, pkg }) {
         break;
       }
       case 'open_app': {
-        if (!d.pkg) { history.push('open_app needs "package"'); break; }
-        say(`open ${d.pkg}`);
-        await phone.launch(d.pkg);
-        current = d.pkg;
-        trace.push({ op: 'launch', pkg: d.pkg });
-        history.push(`opened ${d.pkg}`);
+        const target = await phone.resolveApp(d.pkg);
+        if (!target) { history.push(`no installed app called "${d.pkg}"`); say(`no app "${d.pkg}"`); break; }
+        say(`open ${target}`);
+        await phone.launch(target);
+        current = target;
+        trace.push({ op: 'launch', pkg: target });
+        history.push(`opened ${d.pkg} (${target})`);
         await phone.sleep(700);
         break;
       }

@@ -113,12 +113,17 @@ export class Agent {
     if (res.ok) {
       cap.runs = (cap.runs || 0) + 1;
       await this.registry.save(cap);
-      emit('done', { text: `Done. Verified "${res.verified || 'final step'}" on screen.` });
+      emit('done', { text: `Done. Verified on screen: ${res.verified || "final step"}` });
       return { path: 'code', ok: true, capability: `${cap.name} v${cap.version}` };
     }
     if (res.held) {
       emit('blocked', { text: res.reason });
       return { path: 'held', ok: false, capability: cap.name };
+    }
+    if (res.irreversible) {
+      // Something that sends, pays or deletes already ran. Never retry or re-explore on top of it.
+      emit('blocked', { text: `${cap.name} ran its irreversible step, but the check after it failed: ${res.reason}. Not retrying; check the phone.` });
+      return { path: 'failed', ok: false, capability: `${cap.name} v${cap.version}`, error: res.reason };
     }
     // It broke. Evolve: explore again from the same app, rebuild, retest, install the next version.
     emit('broken', { text: `${cap.name} v${cap.version} failed at step ${res.step}: ${res.reason}. Repairing.` });
@@ -129,7 +134,8 @@ export class Agent {
   }
 
   async learn(task, meter, emit) {
-    const explored = await explore({ task, meter, emit });
+    const known = this.registry.all().map(c => ({ name: c.name, app: c.manifest?.app })).filter(k => k.app);
+    const explored = await explore({ task, meter, emit, known });
     emit('compile', { text: 'Writing the capability from what just worked' });
     const spec = await compile({ task, ...explored, meter, emit });
     if (explored.held) {

@@ -217,6 +217,27 @@ export async function scroll(direction = 'down') {
   await adb(['shell', 'input', 'swipe', String(x), String(a), String(x), String(b), '300']);
 }
 
+// Installed apps with the names people see, from Hands; package names only when Hands is not running.
+let appsCache = { at: 0, list: null };
+export async function installedApps() {
+  if (appsCache.list && Date.now() - appsCache.at < 60000) return appsCache.list;
+  let list;
+  if (await handsAvailable()) {
+    try { list = (await hands('/apps')).apps; } catch { /* fall back */ }
+  }
+  if (!list) list = (await launchableApps()).map(p => ({ package: p, label: p }));
+  appsCache = { at: Date.now(), list };
+  return list;
+}
+
+// "WhatsApp", "whatsapp" or "com.whatsapp" -> package name.
+export async function resolveApp(nameOrPackage) {
+  const q = String(nameOrPackage || '').trim().toLowerCase();
+  const apps = await installedApps();
+  return (apps.find(a => a.package.toLowerCase() === q) || apps.find(a => a.label.toLowerCase() === q)
+    || apps.find(a => a.label.toLowerCase().startsWith(q)))?.package || null;
+}
+
 export async function launchableApps() {
   const out = await adb(['shell', 'cmd', 'package', 'query-activities', '--brief', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER']);
   const pkgs = new Set();
@@ -281,4 +302,30 @@ export async function deviceInfo() {
   } catch (e) { info.error = e.message; }
   deviceCache = { at: Date.now(), info };
   return info;
+}
+
+// Scroll the current list until a text is visible: back to the top first, then down page by page.
+// Stops when the screen no longer changes (end of the list). Returns the matching node or null.
+export async function findText(text, pkg = '') {
+  const want = String(text).toLowerCase();
+  const visible = nodes => nodes.find(n => label(n).toLowerCase().includes(want) && n.cy > 150);
+  const print = nodes => nodes.map(n => `${n.resourceId}|${label(n)}`).join('\n');
+  let screen = await observe(pkg);
+  let hit = visible(screen.nodes);
+  if (hit) return hit;
+  const W = 540;
+  for (const [from, to, max] of [[700, 1700, 12], [1700, 700, 30]]) {
+    let last = print(screen.nodes);
+    for (let i = 0; i < max; i++) {
+      await swipeAt(W, from, W, to, 250);
+      await sleep(350);
+      screen = await observe(pkg);
+      hit = visible(screen.nodes);
+      if (hit) return hit;
+      const now = print(screen.nodes);
+      if (now === last) break; // top or bottom reached
+      last = now;
+    }
+  }
+  return null;
 }

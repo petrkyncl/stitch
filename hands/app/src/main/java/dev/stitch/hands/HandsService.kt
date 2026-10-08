@@ -88,6 +88,7 @@ class HandsService : AccessibilityService() {
         "/swipe" -> JSONObject().put("ok", swipe(body))
         "/global" -> global(body.optString("action"))
         "/node" -> nodeAction(body)
+        "/apps" -> apps()
         "/ime" -> {
             val kb = StitchKeyboard.instance
             JSONObject().put("ok", true).put("installed", kb != null).put("ready", kb?.ready == true)
@@ -162,6 +163,19 @@ class HandsService : AccessibilityService() {
         if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return JSONObject().put("ok", true).put("via", "action")
         val r = Rect().also { node.getBoundsInScreen(it) }
         return JSONObject().put("ok", tapAt(r.exactCenterX(), r.exactCenterY())).put("via", "gesture")
+    }
+
+    // Apps with a launcher icon, with the name a person sees under the icon.
+    private fun apps(): JSONObject {
+        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        val seen = HashSet<String>()
+        val arr = JSONArray()
+        for (ri in packageManager.queryIntentActivities(intent, 0)) {
+            val pkg = ri.activityInfo.packageName
+            if (!seen.add(pkg)) continue
+            arr.put(JSONObject().put("package", pkg).put("label", ri.loadLabel(packageManager).toString()))
+        }
+        return JSONObject().put("ok", true).put("apps", arr)
     }
 
     private fun global(name: String): JSONObject {

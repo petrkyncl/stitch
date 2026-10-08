@@ -4,7 +4,7 @@ import { useRef, type PointerEvent } from "react";
 import { api, ENGINE, type Device } from "@/lib/engine";
 
 // Live phone video you can drive with the mouse: click = tap, drag = swipe.
-export function PhonePanel({ device }: { device: Device | null }) {
+export function PhonePanel({ device, epoch }: { device: Device | null; epoch: number }) {
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   const w = device?.width || 1080;
   const h = device?.height || 2340;
@@ -26,23 +26,19 @@ export function PhonePanel({ device }: { device: Device | null }) {
   const press = (name: string) => api("/api/input", { type: "global", name }).catch(() => {});
 
   return (
-    <div className="flex h-full min-h-0 flex-col items-center gap-4">
+    <div className="flex h-full min-h-0 flex-col items-center gap-4 overflow-y-auto">
       <Status device={device} />
+      {/* Sized by the column width, so the phone stays large in a short window; the column scrolls if needed. */}
       <div
-        className="relative min-h-0 w-full flex-1"
-        style={{ maxWidth: "min(100%, 520px)" }}
+        onPointerDown={down}
+        onPointerUp={up}
+        className="w-full max-w-[460px] shrink-0 cursor-pointer touch-none overflow-hidden rounded-[34px] border-2 border-line bg-black select-none"
+        style={{ aspectRatio: `${w} / ${h}` }}
+        title="Click to tap, drag to swipe"
       >
-        <div
-          onPointerDown={down}
-          onPointerUp={up}
-          className="mx-auto h-full max-h-full cursor-pointer touch-none overflow-hidden rounded-[34px] border-2 border-line bg-black select-none"
-          style={{ aspectRatio: `${w} / ${h}` }}
-          title="Click to tap, drag to swipe"
-        >
-          {/* An MJPEG stream; next/image cannot optimize or proxy a never-ending response. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`${ENGINE}/api/stream.mjpg`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
-        </div>
+        {/* An MJPEG stream; next/image cannot optimize or proxy a never-ending response. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`${ENGINE}/api/stream.mjpg?c=${epoch}`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <NavButton label="Back" onClick={() => press("back")} d="M15 6l-6 6 6 6" />
@@ -68,14 +64,18 @@ function Status({ device }: { device: Device | null }) {
     return <div className="flex items-center gap-2 rounded-full border border-thread px-3 py-1 font-mono text-sm text-thread"><Dot ok={false} /> No phone connected over ADB</div>;
   }
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 font-mono text-sm">
-      <span className="flex items-center gap-2 text-ok"><Dot ok /> {device.transport}</span>
-      <span className="text-flesh">{device.model}</span>
-      <span className="text-muted">Android {device.android}</span>
-      <span className="text-muted">Battery {device.battery}%{device.charging ? " charging" : ""}</span>
-      <span className={device.hands ? "text-ok" : "text-dawn"}>{device.hands ? "Hands on" : "Hands off, using adb"}</span>
+    <div className="flex flex-wrap items-center justify-center gap-2 font-mono text-xs">
+      <Pill tone="ok"><Dot ok /> {device.transport}</Pill>
+      <Pill>{device.model} · Android {device.android}</Pill>
+      <Pill tone={(device.battery ?? 100) < 20 && !device.charging ? "bad" : undefined}>Battery {device.battery}%{device.charging ? ", charging" : ""}</Pill>
+      <Pill tone={device.hands ? "ok" : "warn"}>{device.hands ? "Hands on" : "Hands off, using adb"}</Pill>
     </div>
   );
+}
+
+function Pill({ children, tone }: { children: React.ReactNode; tone?: "ok" | "bad" | "warn" }) {
+  const c = tone === "ok" ? "border-ok/50 text-ok" : tone === "bad" ? "border-thread text-thread" : tone === "warn" ? "border-dawn/60 text-dawn" : "border-line text-muted";
+  return <span className={`flex items-center gap-2 rounded-full border px-3 py-1 whitespace-nowrap ${c}`}>{children}</span>;
 }
 
 function Dot({ ok }: { ok: boolean }) {

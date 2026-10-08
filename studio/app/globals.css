@@ -35,3 +35,14 @@ body {
 @media (min-width: 1800px) { html { font-size: 17px; } }
 @media (min-width: 2400px) { html { font-size: 19px; } }
 @media (min-width: 3200px) { html { font-size: 22px; } }
+
+/* Thin scrollbars in the studio palette instead of the platform default. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 999px; border: 3px solid var(--color-night); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
+::-webkit-scrollbar-corner { background: transparent; }

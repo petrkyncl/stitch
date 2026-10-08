@@ -6,15 +6,20 @@ export function visible(nodes) {
   return nodes.filter(n => n.clickable || n.editable || n.scrollable || label(n) || n.resourceId);
 }
 
+const inside = (a, b) => a.bounds[0] >= b.bounds[0] && a.bounds[1] >= b.bounds[1] && a.bounds[2] <= b.bounds[2] && a.bounds[3] <= b.bounds[3];
+
 export function compact(nodes) {
-  return visible(nodes)
-    .filter(n => n.clickable || n.editable || label(n))
+  const shown = visible(nodes).filter(n => n.clickable || n.editable || label(n));
+  // A list row often repeats every child's text in its own label; keep the row, drop the echoes.
+  const speaking = shown.filter(n => (n.clickable || n.editable) && label(n).length > 0);
+  return shown
+    .filter(n => n.clickable || n.editable || !speaking.some(p => p !== n && inside(n, p) && label(p).includes(label(n))))
     .slice(0, 120)
     .map(n => {
       const role = n.editable ? 'input' : n.clickable ? 'button' : 'text';
       const rid = n.resourceId ? ` #${n.resourceId.split('/').pop()}` : '';
       const state = n.checked ? ' [checked]' : n.focused ? ' [focused]' : '';
-      return `${n.id} ${role} "${label(n).slice(0, 80)}"${rid}${state}`;
+      return `${n.id} ${role} "${label(n).replace(/, Double tap to [^,]*\.?/g, '').slice(0, 70)}"${rid}${state}`;
     })
     .join('\n');
 }
