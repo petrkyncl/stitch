@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stitch Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span class="mark">Stitch</span><span class="sub">studio</span></div>
+  <div class="status">
+    <span id="session" class="chip">Session 1</span>
+    <span id="hands" class="chip">Phone</span>
+    <span id="model" class="chip mono"></span>
+    <button id="newSession" class="ghost" type="button">New session</button>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="col left" aria-label="Task and live log">
+    <form id="taskForm" class="task">
+      <label for="task" class="lbl">Ask the agent</label>
+      <div class="row">
+        <input id="task" name="task" autocomplete="off" placeholder="Set an alarm for 7:14">
+        <button id="go" type="submit">Run</button>
+      </div>
+      <div class="examples" id="examples">
+        <button type="button" class="ex">Set an alarm for 7:14</button>
+        <button type="button" class="ex">Set an alarm for 6:30</button>
+        <button type="button" class="ex">Wake me up at 5:45</button>
+      </div>
+    </form>
+    <div class="lbl">Live</div>
+    <ol id="log" class="log"></ol>
+  </section>
+
+  <section class="col phone-col" aria-label="Phone screen">
+    <div class="phone"><img id="screen" alt="Live phone screen"></div>
+    <label class="toggle"><input type="checkbox" id="live" checked> Live screen</label>
+  </section>
+
+  <section class="col right" aria-label="Cost and capabilities">
+    <div class="meter">
+      <div class="lbl">This task</div>
+      <div class="figs">
+        <div class="fig"><span id="mCalls" class="v">0</span><span class="u">model calls</span></div>
+        <div class="fig"><span id="mCost" class="v">$0</span><span class="u">cost</span></div>
+        <div class="fig"><span id="mTime" class="v">0.0s</span><span class="u">time</span></div>
+      </div>
+      <div id="mTokens" class="tokens mono">0 tokens in, 0 out</div>
+    </div>
+
+    <div>
+      <div class="lbl">Runs</div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>S</th><th>Task</th><th>Path</th><th class="n">Time</th><th class="n">Calls</th><th class="n">Cost</th></tr></thead>
+          <tbody id="runs"><tr class="empty"><td colspan="6">No runs yet. Ask for something above.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="lbl">Registry <span class="muted" id="granted"></span></div>
+      <div id="registry" class="registry"><p class="muted">Empty. Stitch starts with only tap, type and read the screen.</p></div>
+    </div>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
