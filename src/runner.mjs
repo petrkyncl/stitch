@@ -78,7 +78,16 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
     const sel = s.sel?.templated ? { ...s.sel, labelHas: padTimes(render(s.sel.labelHas, params)) } : s.sel;
     const node = await waitFor(sel, pkg, justLaunched ? 6000 : 4000);
     justLaunched = false;
-    if (!node) return { ok: false, step: i, reason: `element not found: ${sel.labelHas || sel.resourceId}` };
+    if (!node) {
+      // A one-time dialog (terms, a tip) that was there while learning and is not now: skip it when the next step's
+      // element is already on screen.
+      const next = cap.steps[i + 1];
+      if (s.op === 'tap' && next?.sel && !next.sel.templated && findBySelector((await phone.observe(pkg)).nodes, next.sel)) {
+        say(`skip "${s.label || sel.labelHas}": not shown this time`);
+        continue;
+      }
+      return { ok: false, step: i, reason: `element not found: ${sel.labelHas || sel.resourceId}` };
+    }
     await phone.highlight(seen, node);
 
     if (s.op === 'tap') {

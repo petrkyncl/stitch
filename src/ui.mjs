@@ -36,11 +36,10 @@ export function selectorFor(node, hint = '', nodes = []) {
     const twins = nodes.filter(n => n !== node && n.editable && n.resourceId === node.resourceId).length;
     return { resourceId: node.resourceId, labelHas: hint || (twins ? stableLabel(node) : ''), cls: node.cls };
   }
-  return {
-    resourceId: node.resourceId || '',
-    labelHas: hint || stableLabel(node),
-    cls: node.cls,
-  };
+  const sel = { resourceId: node.resourceId || '', labelHas: hint || stableLabel(node), cls: node.cls };
+  // Nothing names it (an icon button without id or label): remember where it was, and match the nearest one there.
+  if (!sel.resourceId && !sel.labelHas) sel.at = [node.cx, node.cy];
+  return sel;
 }
 
 // Strip values that change between runs, e.g. "06, Hour" keeps "Hour".
@@ -52,6 +51,13 @@ function stableLabel(node) {
 }
 
 export function findBySelector(nodes, sel) {
+  if (!sel.resourceId && !sel.labelHas && sel.at) {
+    const [x, y] = sel.at;
+    const near = nodes
+      .filter(n => n.cls === sel.cls && n.clickable && Math.hypot(n.cx - x, n.cy - y) < 90)
+      .sort((a, b) => Math.hypot(a.cx - x, a.cy - y) - Math.hypot(b.cx - x, b.cy - y));
+    return near[0] || null;
+  }
   const lc = fold;
   const matches = nodes.filter(n => {
     if (sel.resourceId && n.resourceId !== sel.resourceId) return false;

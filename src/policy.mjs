@@ -9,6 +9,14 @@ const EXTERNAL = /\b(send|post|publish|pay|buy|order|purchase|checkout|call|dele
 
 export const isExternalLabel = label => EXTERNAL.test(String(label || ''));
 
+// An unlabeled button (Gemini's send arrow) has no text to judge. The model says what each step is for; when that
+// starts with such a verb ("Send the typed prompt"), the step is treated the same. Only the start counts, so a goal
+// mentioned later ("Open New chat to send ...") does not.
+export const externalIntent = why => {
+  const head = String(why || '').trim().split(/\s+/).slice(0, 2).join(' ');
+  return (head.match(EXTERNAL) || [])[0] || null;
+};
+
 export function manifestFor(steps) {
   const permissions = new Set(['read_screen']);
   for (const s of steps) {
