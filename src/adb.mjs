@@ -434,8 +434,16 @@ export async function settle(pkg = '', maxMs = 2000) {
 // Fresh start that also clears the app's back stack, so it opens on its default screen, not where it was left.
 export async function launchFresh(pkg) {
   await adb(['shell', 'cmd', 'statusbar', 'collapse']).catch(() => {});
-  const out = await adb(['shell', 'cmd', 'package', 'resolve-activity', '--brief', '-c', 'android.intent.category.LAUNCHER', pkg]);
+  // Start it the way the home screen does (MAIN + LAUNCHER intent for the package), so apps whose launcher entry is an
+  // activity alias, like YouTube Studio, open too. NEW_TASK | CLEAR_TASK puts it on its default screen.
+  try {
+    await adb(['shell', 'am', 'start', '-S', '-W', '-f', '0x10008000', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', '-p', pkg]);
+    return;
+  } catch { /* fall back to the resolved component */ }
+  const out = await adb(['shell', 'cmd', 'package', 'resolve-activity', '--brief', '-c', 'android.intent.category.LAUNCHER', pkg]).catch(() => '');
   const comp = out.trim().split('\n').pop().trim();
-  if (!comp.includes('/')) throw new Error(`No launcher activity for ${pkg}`);
-  await adb(['shell', 'am', 'start', '-S', '-W', '-f', '0x10008000', '-n', comp]); // NEW_TASK | CLEAR_TASK
+  if (comp.includes('/')) {
+    try { await adb(['shell', 'am', 'start', '-S', '-W', '-f', '0x10008000', '-n', comp]); return; } catch { /* last resort below */ }
+  }
+  await adb(['shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1']);
 }
