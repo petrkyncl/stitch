@@ -212,3 +212,46 @@ export async function launch(pkg) {
 export async function screenshot() {
   return adb(['exec-out', 'screencap', '-p'], { binary: true });
 }
+
+// Raw input from the studio (mouse on the live video), in device pixels.
+export async function tapAt(x, y) {
+  if (await handsAvailable()) return hands('/tap', { x, y });
+  return adb(['shell', 'input', 'tap', String(Math.round(x)), String(Math.round(y))]);
+}
+
+export async function swipeAt(x1, y1, x2, y2, ms = 300) {
+  if (await handsAvailable()) return hands('/swipe', { x1, y1, x2, y2, ms });
+  return adb(['shell', 'input', 'swipe', ...[x1, y1, x2, y2].map(v => String(Math.round(v))), String(ms)]);
+}
+
+let deviceCache = { at: 0, info: null };
+
+// Connection and device facts for the studio header: transport, model, Android, battery, screen.
+export async function deviceInfo() {
+  if (Date.now() - deviceCache.at < 4000 && deviceCache.info) return deviceCache.info;
+  const info = { connected: false };
+  try {
+    const list = await new Promise((resolve, reject) => execFile(ADB, ['devices', '-l'], (e, out) => (e ? reject(e) : resolve(out))));
+    const line = list.split('\n').find(l => (SERIAL ? l.startsWith(SERIAL) : /\sdevice\s/.test(l)) && /\sdevice\s/.test(l));
+    if (line) {
+      info.connected = true;
+      info.serial = line.split(/\s+/)[0];
+      info.transport = /usb:/.test(line) ? 'USB' : /:\d+$/.test(info.serial) ? 'Wi-Fi' : 'ADB';
+      info.model = (line.match(/model:(\S+)/) || [])[1]?.replace(/_/g, ' ');
+      const [release, battery, size] = await Promise.all([
+        adb(['shell', 'getprop', 'ro.build.version.release']),
+        adb(['shell', 'dumpsys', 'battery']),
+        adb(['shell', 'wm', 'size']),
+      ]);
+      info.android = release.trim();
+      info.battery = Number((battery.match(/level: (\d+)/) || [])[1]);
+      info.charging = /AC powered: true|USB powered: true/.test(battery);
+      const m = size.match(/(\d+)x(\d+)/g);
+      const [w, h] = (m ? m[m.length - 1] : '1080x2340').split('x').map(Number);
+      info.width = w; info.height = h;
+      info.hands = await handsAvailable();
+    }
+  } catch (e) { info.error = e.message; }
+  deviceCache = { at: Date.now(), info };
+  return info;
+}

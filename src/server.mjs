@@ -2,7 +2,7 @@
 import http from 'node:http';
 import { Registry } from './registry.mjs';
 import { Agent } from './agent.mjs';
-import { screenshot, handsAvailable } from './adb.mjs';
+import { screenshot, handsAvailable, deviceInfo, tapAt, swipeAt, globalAction } from './adb.mjs';
 import { model, provider, hasCredentials } from './llm.mjs';
 import { serveStream } from './stream.mjs';
 
@@ -15,7 +15,7 @@ function emit(type, data) {
 }
 
 const registry = await new Registry().load();
-const agent = new Agent(registry, emit);
+const agent = await new Agent(registry, emit).loadHistory();
 
 async function body(req) {
   let raw = '';
@@ -56,6 +56,18 @@ const server = http.createServer(async (req, res) => {
       if (agent.busy) return json(res, 409, { error: 'Stitch is still working on the previous task' });
       agent.handle(task.trim());
       return json(res, 202, { ok: true });
+    }
+    if (url.pathname === '/api/device') return json(res, 200, await deviceInfo());
+    if (req.method === 'POST' && url.pathname === '/api/input') {
+      // Coordinates arrive normalized (0..1) from the video, so the studio never needs the phone's resolution.
+      const b = await body(req);
+      const dev = await deviceInfo();
+      const W = dev.width || 1080, H = dev.height || 2340;
+      if (b.type === 'tap') await tapAt(b.x * W, b.y * H);
+      else if (b.type === 'swipe') await swipeAt(b.x1 * W, b.y1 * H, b.x2 * W, b.y2 * H, Math.min(Math.max(b.ms || 300, 80), 1500));
+      else if (b.type === 'global') await globalAction(b.name);
+      else return json(res, 400, { error: 'unknown input' });
+      return json(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/session') { await agent.newSession(); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/approve') { await agent.approve((await body(req)).name); return json(res, 200, agent.state()); }

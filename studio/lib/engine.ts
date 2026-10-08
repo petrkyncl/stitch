@@ -3,14 +3,20 @@ export const ENGINE = process.env.NEXT_PUBLIC_ENGINE || "http://localhost:4400";
 
 export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number; cost: number; ms: number };
 
+export type RunPath = "learned" | "code" | "repaired" | "held" | "failed";
+
+export type RunEvent = { type: string; kind?: string; text?: string; why?: string; at: number };
+
 export type Run = MeterSnapshot & {
+  id: string;
   session: number;
   task: string;
-  path: "learned" | "code" | "repaired" | "held" | "failed";
-  ok: boolean;
+  path?: RunPath;
+  ok?: boolean;
   capability?: string;
   error?: string;
   at: number;
+  events: RunEvent[];
 };
 
 export type Capability = {
@@ -30,17 +36,35 @@ export type Capability = {
 export type EngineState = {
   session: number;
   busy: boolean;
+  current: Run | null;
   runs: Run[];
   capabilities: Capability[];
   granted: { permissions: string[]; effects: string[] };
   model: string;
+  provider: string;
   hands: boolean;
   hasKey: boolean;
+};
+
+export type Device = {
+  connected: boolean;
+  serial?: string;
+  transport?: string;
+  model?: string;
+  android?: string;
+  battery?: number;
+  charging?: boolean;
+  width?: number;
+  height?: number;
+  hands?: boolean;
+  error?: string;
 };
 
 export type EngineEvent = {
   type: string;
   at: number;
+  runId?: string;
+  id?: string;
   text?: string;
   why?: string;
   kind?: string;
@@ -48,7 +72,7 @@ export type EngineEvent = {
   session?: number;
   capabilities?: number;
   meter?: MeterSnapshot;
-} & Partial<Run>;
+};
 
 export async function api<T = unknown>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(ENGINE + path, body === undefined ? {} : {
@@ -62,4 +86,4 @@ export async function api<T = unknown>(path: string, body?: unknown): Promise<T>
 }
 
 export const money = (v: number) => (v === 0 ? "$0" : v < 0.01 ? "$" + v.toFixed(4) : "$" + v.toFixed(3));
-export const secs = (ms: number) => (ms / 1000).toFixed(1) + "s";
+export const secs = (ms: number) => (ms / 1000).toFixed(1) + " s";

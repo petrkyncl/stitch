@@ -30,3 +30,8 @@ body {
   outline: 2px solid var(--color-dawn);
   outline-offset: 2px;
 }
+
+/* Big monitors: scale every rem-based size so the studio reads well at 1440p and 4K. */
+@media (min-width: 1800px) { html { font-size: 17px; } }
+@media (min-width: 2400px) { html { font-size: 19px; } }
+@media (min-width: 3200px) { html { font-size: 22px; } }

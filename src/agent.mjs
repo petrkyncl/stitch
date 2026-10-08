@@ -4,6 +4,9 @@ import { explore } from './explorer.mjs';
 import { compile } from './compiler.mjs';
 import { run } from './runner.mjs';
 import { review, GRANTED } from './policy.mjs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+
+const HISTORY = 'runs/history.json';
 
 export class Agent {
   constructor(registry, emit) {
@@ -14,9 +17,25 @@ export class Agent {
     this.busy = false;
   }
 
+  // Runs survive an engine restart, so the studio keeps its chat and the learning-vs-reuse numbers.
+  async loadHistory() {
+    try {
+      const saved = JSON.parse(await readFile(HISTORY, 'utf8'));
+      this.runs = saved.runs || [];
+      this.session = saved.session || 1;
+    } catch { /* first start */ }
+    return this;
+  }
+
+  async saveHistory() {
+    await mkdir('runs', { recursive: true });
+    await writeFile(HISTORY, JSON.stringify({ session: this.session, runs: this.runs.slice(-200) }, null, 1));
+  }
+
   async newSession() {
     this.session += 1;
     await this.registry.load(); // nothing carries over except what is on disk
+    await this.saveHistory();
     this.emit('session', { session: this.session, capabilities: this.registry.all().length });
   }
 
@@ -24,9 +43,13 @@ export class Agent {
     if (this.busy) throw new Error('Stitch is already working on a task');
     this.busy = true;
     const meter = new Meter();
-    const record = { session: this.session, task, at: Date.now() };
-    const emit = (type, data = {}) => this.emit(type, { ...data, meter: meter.snapshot() });
-    emit('task', { task, session: this.session });
+    const record = { id: `${Date.now()}`, session: this.session, task, at: Date.now(), events: [] };
+    this.current = record;
+    const emit = (type, data = {}) => {
+      if (type !== 'task') record.events.push({ type, kind: data.kind, text: data.text, why: data.why, at: Date.now() });
+      this.emit(type, { ...data, runId: record.id, meter: meter.snapshot() });
+    };
+    emit('task', { task, session: this.session, id: record.id });
     try {
       const found = await this.route(task, meter, emit);
       if (found) {
@@ -41,7 +64,9 @@ export class Agent {
     } finally {
       Object.assign(record, meter.snapshot());
       this.runs.push(record);
+      this.current = null;
       this.busy = false;
+      await this.saveHistory().catch(() => {});
       this.emit('run', record);
       this.emit('registry', { capabilities: this.registry.summary() });
     }
@@ -160,6 +185,6 @@ export class Agent {
   }
 
   state() {
-    return { session: this.session, busy: this.busy, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
+    return { session: this.session, busy: this.busy, current: this.current, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
   }
 }

@@ -1,74 +1,78 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ENGINE, type EngineEvent, type EngineState, type MeterSnapshot } from "@/lib/engine";
+import { api, ENGINE, type Device, type EngineEvent, type EngineState, type MeterSnapshot, type Run } from "@/lib/engine";
 
-export type LogLine = { id: number; kind: string; text: string; why?: string };
+const EMPTY: MeterSnapshot = { calls: 0, tokensIn: 0, tokensOut: 0, cost: 0, ms: 0 };
 
-const EMPTY_METER: MeterSnapshot = { calls: 0, tokensIn: 0, tokensOut: 0, cost: 0, ms: 0 };
-
-// Engine state plus the live event stream: log lines and the meter of the task in progress.
+// Engine state, the run in progress (built from the live stream), session markers and device status.
 export function useEngine() {
   const [state, setState] = useState<EngineState | null>(null);
-  const [log, setLog] = useState<LogLine[]>([]);
-  const [meter, setMeter] = useState<MeterSnapshot>(EMPTY_METER);
-  const [elapsed, setElapsed] = useState(0);
+  const [live, setLive] = useState<Run | null>(null);
+  const [device, setDevice] = useState<Device | null>(null);
   const [offline, setOffline] = useState(false);
-  const started = useRef(0);
-  const nextId = useRef(0);
+  const [sessions, setSessions] = useState<{ session: number; at: number; capabilities: number }[]>([]);
+  const [now, setNow] = useState(0); // set on the client only, the clock is meaningless during prerender
+  const liveRef = useRef<Run | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setState(await api<EngineState>("/api/state"));
+      const s = await api<EngineState>("/api/state");
+      setState(s);
       setOffline(false);
+      // Rejoin a run that started before this page loaded.
+      if (s.current && !liveRef.current) { liveRef.current = { ...s.current }; setLive(liveRef.current); }
+      if (!s.current) { liveRef.current = null; setLive(null); }
     } catch {
       setOffline(true);
     }
   }, []);
 
-  const push = useCallback((kind: string, text: string, why?: string) => {
-    setLog(l => [...l.slice(-400), { id: nextId.current++, kind, text, why }]);
-  }, []);
+  const update = (fn: (r: Run) => Run) => {
+    if (!liveRef.current) return;
+    liveRef.current = fn(liveRef.current);
+    setLive(liveRef.current);
+  };
 
-  // The stream's open event loads the first state, so there is no separate initial fetch.
   useEffect(() => {
     const es = new EventSource(ENGINE + "/api/events");
     es.onerror = () => setOffline(true);
     es.onopen = () => { setOffline(false); refresh(); };
     es.onmessage = e => {
       const ev: EngineEvent = JSON.parse(e.data);
-      if (ev.meter) setMeter(ev.meter);
+      const meter = ev.meter ?? EMPTY;
       switch (ev.type) {
         case "task":
-          started.current = Date.now();
-          setMeter(EMPTY_METER);
-          setElapsed(0);
-          push("task", ev.task || "");
+          liveRef.current = { id: ev.id || String(ev.at), session: ev.session ?? 0, task: ev.task || "", at: ev.at, events: [], ...EMPTY };
+          setLive(liveRef.current);
           setState(s => (s ? { ...s, busy: true } : s));
           break;
-        case "step":
-          push(ev.kind || "step", ev.text || "", ev.why);
-          break;
         case "session":
-          push("session", `New session ${ev.session}. Memory cleared, ${ev.capabilities} capabilities loaded from disk.`);
+          setSessions(list => [...list, { session: ev.session ?? 0, at: ev.at, capabilities: ev.capabilities ?? 0 }]);
           refresh();
           break;
         case "run":
-          started.current = 0;
-          setMeter({ calls: ev.calls ?? 0, tokensIn: ev.tokensIn ?? 0, tokensOut: ev.tokensOut ?? 0, cost: ev.cost ?? 0, ms: ev.ms ?? 0 });
-          setElapsed(ev.ms ?? 0);
-          refresh();
-          break;
         case "registry":
           refresh();
           break;
         default:
-          if (ev.text) push(ev.type, ev.text);
+          update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, at: ev.at }] }));
       }
     };
-    const tick = setInterval(() => { if (started.current) setElapsed(Date.now() - started.current); }, 100);
-    return () => { es.close(); clearInterval(tick); };
-  }, [push, refresh]);
+    return () => es.close();
+  }, [refresh]);
 
-  return { state, log, meter, elapsed, offline, refresh, push };
+  // Device status every few seconds; a ticking clock for the run in progress.
+  useEffect(() => {
+    let stop = false;
+    const poll = async () => {
+      try { const d = await api<Device>("/api/device"); if (!stop) setDevice(d); } catch { if (!stop) setDevice({ connected: false }); }
+    };
+    poll();
+    const t = setInterval(poll, 5000);
+    const tick = setInterval(() => setNow(Date.now()), 100);
+    return () => { stop = true; clearInterval(t); clearInterval(tick); };
+  }, []);
+
+  return { state, live, device, offline, sessions, now, refresh };
 }
