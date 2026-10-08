@@ -48,7 +48,16 @@ class StitchKeyboard : InputMethodService() {
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#130E12"))
-            setPadding(dp(4), dp(4), dp(4), dp(22)) // room for the gesture bar
+            setPadding(dp(4), dp(4), dp(4), dp(22))
+        }
+        // The keyboard is drawn edge to edge, and the system puts its own buttons (switch keyboard, hide) in the
+        // navigation bar below it. Keep the keys above that bar, whatever its height on this phone.
+        box.setOnApplyWindowInsetsListener { v, insets ->
+            val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.navigationBars() or android.view.WindowInsets.Type.tappableElement()).bottom
+            } else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+            v.setPadding(dp(4), dp(4), dp(4), maxOf(bottom, dp(22)) + dp(4))
+            insets
         }
         root = box
         render()

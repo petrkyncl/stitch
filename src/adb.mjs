@@ -66,7 +66,9 @@ let handsCheckedAt = 0;
 async function hands(path, body) {
   let res;
   try {
-    res = await fetch(HANDS + path, body ? { method: 'POST', body: JSON.stringify(body) } : {});
+    // Never wait on the phone forever: a call that hangs (keyboard gone, app frozen) fails and the caller falls back.
+    const signal = AbortSignal.timeout(path.startsWith('/ime/type') ? 20000 : 6000);
+    res = await fetch(HANDS + path, body ? { method: 'POST', body: JSON.stringify(body), signal } : { signal });
   } catch (e) {
     handsReady = null; // connection gone: check again next time
     throw e;
