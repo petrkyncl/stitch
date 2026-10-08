@@ -12,8 +12,11 @@ case "$CUR" in
   null|"") NEW="$SVC" ;;
   *) NEW="$CUR:$SVC" ;;
 esac
-# Replacing an APK unbinds its service; writing the list again binds it.
+# Replacing an APK unbinds its service and Android may mark it crashed; stop the process, then write the list
+# without and with the service so it binds fresh.
+$ADB shell am force-stop dev.stitch.hands
 $ADB shell "settings --user 0 put secure enabled_accessibility_services '$(echo "$CUR" | sed "s#:*$SVC##")'"
+sleep 1
 $ADB shell "settings --user 0 put secure enabled_accessibility_services '$NEW'"
 $ADB shell settings --user 0 put secure accessibility_enabled 1
 # Samsung freezes idle background apps, which would stall the HTTP server.

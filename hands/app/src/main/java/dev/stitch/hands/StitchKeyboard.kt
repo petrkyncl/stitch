@@ -33,15 +33,96 @@ class StitchKeyboard : InputMethodService() {
         super.onDestroy()
     }
 
-    // A thin bar instead of a full keyboard, so the app stays visible.
-    override fun onCreateInputView(): View = TextView(this).apply {
-        text = "Stitch keyboard"
-        gravity = Gravity.CENTER
-        setTextColor(Color.parseColor("#A8969F"))
-        setBackgroundColor(Color.parseColor("#130E12"))
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-        val pad = (8 * resources.displayMetrics.density).toInt()
-        setPadding(pad, pad, pad, pad)
+    // A real keyboard a person can use too: letters, numbers and symbols, shift, delete, space and the field's
+    // own Enter action. The globe key switches back to the person's usual keyboard.
+    private var symbols = false
+    private var shift = false
+    private var root: android.widget.LinearLayout? = null
+
+    private val letters = listOf("1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm")
+    private val signs = listOf("1234567890", "@#$%&-+()/", "*\"':;!?_=", ",.<>[]{}")
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    override fun onCreateInputView(): View {
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#130E12"))
+            setPadding(dp(4), dp(4), dp(4), dp(22)) // room for the gesture bar
+        }
+        root = box
+        render()
+        return box
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        shift = false
+        render()
+    }
+
+    private fun render() {
+        val box = root ?: return
+        box.removeAllViews()
+        box.addView(TextView(this).apply {
+            text = "Stitch keyboard"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#A8969F"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(2), 0, dp(4))
+        })
+        val rows = if (symbols) signs else letters
+        rows.forEachIndexed { i, chars ->
+            val row = newRow()
+            if (i == 3 && !symbols) row.addView(key(if (shift) "⇧ on" else "⇧", 1.5f) { shift = !shift; render() })
+            for (c in chars) {
+                val label = if (shift && !symbols) c.uppercase() else c.toString()
+                row.addView(key(label, 1f) { commit(label); if (shift) { shift = false; render() } })
+            }
+            if (i == 3) row.addView(key("⌫", 1.5f) { backspace() })
+            box.addView(row)
+        }
+        val bottom = newRow()
+        bottom.addView(key("🌐", 1.2f, onLong = {
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()
+        }) { if (!switchToPreviousInputMethod()) (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker() })
+        bottom.addView(key(if (symbols) "abc" else "?123", 1.4f) { symbols = !symbols; render() })
+        bottom.addView(key(",", 1f) { commit(",") })
+        bottom.addView(key("space", 4f) { commit(" ") })
+        bottom.addView(key(".", 1f) { commit(".") })
+        bottom.addView(key("⏎", 1.6f, accent = true) { enter() })
+        box.addView(bottom)
+    }
+
+    private fun newRow() = android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.HORIZONTAL
+        layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(46))
+    }
+
+    private fun key(label: String, weight: Float, accent: Boolean = false, onLong: (() -> Unit)? = null, onTap: () -> Unit): View =
+        TextView(this).apply {
+            text = label
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(if (accent) "#130E12" else "#EFE4DD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 2) 13f else 19f)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(7).toFloat()
+                setColor(Color.parseColor(if (accent) "#F3A64A" else "#251C24"))
+            }
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.MATCH_PARENT, weight).apply {
+                setMargins(dp(2), dp(3), dp(2), dp(3))
+            }
+            isClickable = true
+            setOnClickListener { performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP); onTap() }
+            if (onLong != null) setOnLongClickListener { onLong(); true }
+        }
+
+    private fun commit(text: String) { currentInputConnection?.commitText(text, 1) }
+
+    private fun backspace() {
+        val ic = currentInputConnection ?: return
+        val selected = ic.getSelectedText(0)
+        if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0)
     }
 
     val ready: Boolean get() = currentInputConnection != null && currentInputStarted
