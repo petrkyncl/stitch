@@ -35,7 +35,10 @@ export class Registry {
   match(task) {
     for (const cap of this.caps.values()) {
       const params = matchPatterns(cap.patterns, task);
-      if (params) return { cap, params };
+      if (params) {
+        const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
+        return { cap, params: { ...defaults, ...params } };
+      }
     }
     return null;
   }

@@ -26,19 +26,21 @@ export function PhonePanel({ device, epoch }: { device: Device | null; epoch: nu
   const press = (name: string) => api("/api/input", { type: "global", name }).catch(() => {});
 
   return (
-    <div className="flex h-full min-h-0 flex-col items-center gap-4 overflow-y-auto">
+    <div className="flex h-full min-h-0 flex-col items-center gap-4 overflow-y-auto 2xl:overflow-hidden">
       <Status device={device} />
-      {/* Sized by the column width, so the phone stays large in a short window; the column scrolls if needed. */}
-      <div
-        onPointerDown={down}
-        onPointerUp={up}
-        className="w-full max-w-[460px] shrink-0 cursor-pointer touch-none overflow-hidden rounded-[34px] border-2 border-line bg-black select-none"
-        style={{ aspectRatio: `${w} / ${h}` }}
-        title="Click to tap, drag to swipe"
-      >
+      {/* Small screens: sized by the column width. Wide screens (three columns, full height): as tall as the column allows. */}
+      <div className="flex w-full justify-center 2xl:min-h-0 2xl:flex-1">
+        <div
+          onPointerDown={down}
+          onPointerUp={up}
+          className="w-full max-w-[460px] shrink-0 cursor-pointer touch-none overflow-hidden rounded-[34px] border-2 border-line bg-black select-none 2xl:h-full 2xl:w-auto 2xl:max-w-full"
+          style={{ aspectRatio: `${w} / ${h}` }}
+          title="Click to tap, drag to swipe"
+        >
         {/* An MJPEG stream; next/image cannot optimize or proxy a never-ending response. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={`${ENGINE}/api/stream.mjpg?c=${epoch}`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
+        </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <NavButton label="Back" onClick={() => press("back")} d="M15 6l-6 6 6 6" />

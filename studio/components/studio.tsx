@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/engine";
 import { useEngine } from "./use-engine";
 import { Chat } from "./chat";
@@ -22,6 +22,13 @@ export default function Studio() {
     setError("");
     try { await api("/api/task", { task: text }); setTask(""); } catch (err) { setError((err as Error).message); }
   }
+  const stop = () => api("/api/stop", {}).catch(err => setError(err.message));
+  // Esc stops the agent, like stopping a person mid-task.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && busy) stop(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const act = (path: string, body?: unknown) => api(path, body ?? {}).then(refresh).catch(err => setError(err.message));
 
   return (
@@ -53,9 +60,11 @@ export default function Studio() {
               <input id="task" value={task} onChange={e => setTask(e.target.value)} autoComplete="off"
                 placeholder="Ask the phone for something, e.g. Set an alarm for 7:14"
                 className="min-w-0 flex-1 bg-transparent px-3 py-2 text-lg text-flesh outline-none placeholder:text-muted/70" />
-              <button type="submit" disabled={busy || !task.trim()} className="rounded-xl bg-dawn px-6 text-lg font-semibold text-night disabled:opacity-40">
-                {busy ? "Working" : "Send"}
-              </button>
+              {busy
+                ? <button type="button" onClick={stop} title="Stop (Esc)" className="flex items-center gap-2 rounded-xl border border-thread px-6 text-lg font-semibold text-thread hover:bg-thread hover:text-night">
+                    <span className="size-3 rounded-[3px] bg-current" /> Stop
+                  </button>
+                : <button type="submit" disabled={!task.trim()} className="rounded-xl bg-dawn px-6 text-lg font-semibold text-night disabled:opacity-40">Send</button>}
             </div>
             <div className="flex flex-wrap items-center gap-2 px-1">
               {EXAMPLES.map(x => (

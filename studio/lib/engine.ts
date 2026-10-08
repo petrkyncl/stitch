@@ -3,7 +3,7 @@ export const ENGINE = process.env.NEXT_PUBLIC_ENGINE || "http://localhost:4400";
 
 export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number; cost: number; ms: number };
 
-export type RunPath = "learned" | "code" | "repaired" | "held" | "failed";
+export type RunPath = "learned" | "code" | "repaired" | "held" | "failed" | "stopped";
 
 export type RunEvent = { type: string; kind?: string; text?: string; why?: string; frame?: string; at: number };
 
@@ -17,6 +17,7 @@ export type Run = MeterSnapshot & {
   error?: string;
   at: number;
   events: RunEvent[];
+  data?: Record<string, string>[];
 };
 
 export type Capability = {

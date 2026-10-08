@@ -2,6 +2,7 @@
 import * as phone from './adb.mjs';
 import { findBySelector, screenHasText } from './ui.mjs';
 import { render, padTimes } from './compiler.mjs';
+import { collect } from './extract.mjs';
 
 // Poll the tree until the element shows up. Reading it costs ~20 ms, so waiting is cheap; apps that just
 // launched get longer.
@@ -37,6 +38,12 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       await phone.globalAction(name);
       await phone.sleep(350);
       continue;
+    }
+    if (s.op === 'extract') {
+      const limit = Number(render(s.text, params)) || 20;
+      say(`extract up to ${limit} rows`);
+      const data = await collect({ rules: s.rules, limit, pkg, emit: text => say(text) });
+      return data.length ? { ok: true, verified: `${data.length} rows collected`, data } : { ok: false, step: i, reason: 'the list gave no rows' };
     }
     if (s.op === 'find') {
       const text = padTimes(render(s.text, params));

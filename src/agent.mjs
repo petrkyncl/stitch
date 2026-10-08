@@ -11,6 +11,10 @@ const FRAME_KINDS = new Set(['explore', 'run', 'held', 'done', 'broken', 'blocke
 
 const HISTORY = 'runs/history.json';
 
+class StoppedError extends Error {
+  constructor() { super('Stopped by you'); }
+}
+
 export class Agent {
   constructor(registry, emit) {
     this.registry = registry;
@@ -49,7 +53,10 @@ export class Agent {
     const record = { id: `${Date.now()}`, session: this.session, task, at: Date.now(), events: [] };
     this.current = record;
     let frames = 0;
+    this.stopRequested = false;
     const emit = (type, data = {}) => {
+      // Every step reports progress through here before it acts, so a stop lands before the next action.
+      if (this.stopRequested && !['error', 'run', 'stopped', 'blocked'].includes(type)) throw new StoppedError();
       // Keep what the phone showed at this step, straight from the live video, so the chat can replay the run.
       let frame;
       const jpg = latestFrame();
@@ -71,9 +78,15 @@ export class Agent {
         Object.assign(record, await this.learn(task, meter, emit));
       }
     } catch (e) {
-      Object.assign(record, { path: 'failed', ok: false, error: e.message });
-      emit('error', { text: e.message });
+      if (e instanceof StoppedError) {
+        Object.assign(record, { path: 'stopped', ok: false, error: 'Stopped by you' });
+        emit('stopped', { text: 'Stopped by you. Nothing after this point ran.' });
+      } else {
+        Object.assign(record, { path: 'failed', ok: false, error: e.message });
+        emit('error', { text: e.message });
+      }
     } finally {
+      this.stopRequested = false;
       Object.assign(record, meter.snapshot());
       this.runs.push(record);
       this.current = null;
@@ -100,7 +113,8 @@ export class Agent {
     const cap = out.capability && this.registry.get(out.capability);
     if (!cap) return null;
     emit('route', { text: `Model routed to ${cap.name} v${cap.version}`, via: 'model' });
-    return { cap, params: out.params || {} };
+    const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
+    return { cap, params: { ...defaults, ...(out.params || {}) } };
   }
 
   async useExisting({ cap, params }, task, meter, emit) {
@@ -114,7 +128,7 @@ export class Agent {
       cap.runs = (cap.runs || 0) + 1;
       await this.registry.save(cap);
       emit('done', { text: `Done. Verified on screen: ${res.verified || "final step"}` });
-      return { path: 'code', ok: true, capability: `${cap.name} v${cap.version}` };
+      return { path: 'code', ok: true, capability: `${cap.name} v${cap.version}`, data: res.data };
     }
     if (res.held) {
       emit('blocked', { text: res.reason });
@@ -130,7 +144,7 @@ export class Agent {
     const explored = await explore({ task, meter, emit, pkg: cap.steps[0].pkg });
     const next = await compile({ task, ...explored, meter, emit, previous: cap });
     const installed = await this.testAndInstall(next, meter, emit, cap, `repaired after: ${res.reason}`);
-    return { path: 'repaired', ok: installed.status === 'installed', capability: `${installed.name} v${installed.version}` };
+    return { path: 'repaired', ok: installed.status === 'installed', capability: `${installed.name} v${installed.version}`, data: explored.data };
   }
 
   async learn(task, meter, emit) {
@@ -143,12 +157,13 @@ export class Agent {
       return { path: 'held', ok: false, capability: `${cap.name} v${cap.version}` };
     }
     const cap = await this.testAndInstall(spec, meter, emit, null, `learned from "${task}"`);
-    return { path: 'learned', ok: cap.status === 'installed', capability: `${cap.name} v${cap.version}` };
+    return { path: 'learned', ok: cap.status === 'installed', capability: `${cap.name} v${cap.version}`, data: explored.data };
   }
 
   async testAndInstall(spec, meter, emit, previous, reason) {
     emit('test', { text: `Testing ${spec.name} with new input ${JSON.stringify(spec.test)}` });
-    const res = await run({ ...spec, version: 0 }, spec.test, { emit });
+    const defaults = Object.fromEntries((spec.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
+    const res = await run({ ...spec, version: 0 }, { ...defaults, ...spec.test }, { emit });
     const tests = { passed: res.ok ? 1 : 0, total: 1, last: res.ok ? `pass: ${res.verified || 'ok'}` : `fail: ${res.reason}` };
     if (!res.ok) {
       emit('error', { text: `Test failed, not installing: ${res.reason}` });
@@ -177,6 +192,11 @@ export class Agent {
       text: verdict.allowed ? `Installed ${cap.name} v${version}` : `${cap.name} v${version} saved but held: ${verdict.reason}`,
     });
     return cap;
+  }
+
+  stop() {
+    if (this.busy) this.stopRequested = true;
+    return this.busy;
   }
 
   async approve(name) {

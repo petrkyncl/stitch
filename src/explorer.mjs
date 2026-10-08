@@ -4,6 +4,7 @@ import * as phone from './adb.mjs';
 import { askTool } from './llm.mjs';
 import { compact, selectorFor, provenText } from './ui.mjs';
 import { isExternalLabel } from './policy.mjs';
+import { rowsOnScreen, defineExtractor, collect } from './extract.mjs';
 import { appendFile, mkdir } from 'node:fs/promises';
 
 // Raw model answers, to see how the model phrases actions (runs/ is gitignored).
@@ -25,10 +26,14 @@ lines "<id> <role> \\"<label>\\" #<resource-id>" and answer with ONE action as J
 {"action":"scroll","direction":"down","id":3}  scroll a list (id optional) down or up
 {"action":"global","name":"back"}              phone buttons: back, home, recents, notifications, quick_settings
 {"action":"open_app","app":"WhatsApp"}         open another app by its name (or "package")
+{"action":"extract","limit":20,"fields":["name","rating"]}  copy rows of the list on screen into a table (scrolls by itself)
 {"action":"wait"}                              let the screen settle
 {"action":"done","expect":"07:14"}             the task is finished; expect = short text visible now that proves it
 {"action":"fail"}                              the task cannot be done
 To reach an item in a long list use "find" instead of scrolling yourself.
+After typing a search, use enter to run it; suggestions under a search box are not results.
+When the request asks for data from a list (e.g. "get 20 pizza places with rating"), open the full results list, then use extract once;
+extract finishes the task. Use the number the request asks for as limit (default 20).
 Add "why" with a few words. Use only ids from the current screen. Prefer typing into inputs over tapping digits or spinners.
 To write into an input use "type" directly: it focuses the input by itself, so never tap an input first.
 If an action did not change the screen, do something different instead of repeating it.
@@ -40,7 +45,9 @@ const ACT = {
   parameters: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['tap', 'long_press', 'type', 'enter', 'find', 'scroll', 'global', 'open_app', 'wait', 'done', 'fail'] },
+      action: { type: 'string', enum: ['tap', 'long_press', 'type', 'enter', 'find', 'scroll', 'global', 'open_app', 'extract', 'wait', 'done', 'fail'] },
+      limit: { type: 'integer', description: 'extract only: how many rows to collect' },
+      fields: { type: 'array', items: { type: 'string' }, description: 'extract only: columns to collect, e.g. name, rating, address' },
       id: { type: 'integer', description: 'Element id from the current screen (tap, long_press, type, enter, optional for scroll)' },
       text: { type: 'string', description: 'Text to type (type) or to look for (find)' },
       direction: { type: 'string', enum: ['up', 'down'] },
@@ -79,6 +86,8 @@ function normalize(d) {
     direction: d.direction === 'up' ? 'up' : 'down',
     name: d.name ?? d.button ?? (GLOBALS.includes(raw) ? raw : raw === 'go_back' ? 'back' : undefined),
     pkg: d.package ?? d.pkg ?? d.app ?? d.name_of_app,
+    limit: Number(d.limit ?? d.count ?? 20) || 20,
+    fields: Array.isArray(d.fields) ? d.fields.map(String) : [],
     why: d.why ?? d.reason ?? '',
   };
 }
@@ -237,6 +246,29 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         history.push(`opened ${d.pkg} (${target})`);
         await phone.sleep(700);
         break;
+      }
+      case 'extract': {
+        const { rows } = rowsOnScreen(screen.nodes);
+        if (!rows.length) {
+          history.push('extract found no list rows here. If a search was typed, press enter to show the results; otherwise open the results list. Do not try extract again on the same screen');
+          say('extract: no list here');
+          break;
+        }
+        say(`extract up to ${d.limit} rows${d.fields.length ? ` (${d.fields.join(', ')})` : ''}`);
+        let rules;
+        try {
+          rules = await defineExtractor({ meter, task, fields: d.fields, rows });
+        } catch {
+          history.push(`the rows on this screen do not contain ${d.fields.join(', ') || 'the requested data'}; they are probably search suggestions. Press enter to show the real results, then extract`);
+          say('extract: these rows are not the results');
+          break;
+        }
+        emit('step', { kind: 'explore', text: `columns: ${rules.fields.map(f => f.name).join(', ')}`, meter: meter.snapshot() });
+        const data = await collect({ rules, limit: d.limit, pkg: current, emit: text => emit('step', { kind: 'run', text }) });
+        if (!data.length) { history.push('extract collected nothing'); break; }
+        trace.push({ op: 'extract', rules, text: String(d.limit) });
+        say(`collected ${data.length} rows`);
+        return { pkg, trace, expect: '', held: false, data };
       }
       case 'wait':
         say('wait');

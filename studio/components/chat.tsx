@@ -11,12 +11,13 @@ const OUTCOME: Record<string, { label: string; tone: string }> = {
   repaired: { label: "Repaired and installed a new version", tone: "text-dawn border-dawn/60" },
   held: { label: "Held for a person's approval", tone: "text-thread border-thread/60" },
   failed: { label: "Did not finish", tone: "text-thread border-thread/60" },
+  stopped: { label: "Stopped by you", tone: "text-muted border-line" },
   working: { label: "Working", tone: "text-flesh border-line" },
 };
 
 const DOT: Record<string, string> = {
   explore: "bg-muted", run: "bg-ok", gap: "bg-dawn", compile: "bg-dawn", test: "bg-flesh", install: "bg-ok", done: "bg-ok",
-  route: "bg-ok", use: "bg-ok", broken: "bg-dawn", blocked: "bg-thread", held: "bg-thread", error: "bg-thread",
+  route: "bg-ok", use: "bg-ok", broken: "bg-dawn", blocked: "bg-thread", held: "bg-thread", error: "bg-thread", stopped: "bg-muted",
 };
 
 export function Chat({ runs, live, sessions, now }: { runs: Run[]; live: Run | null; sessions: { session: number; at: number; capabilities: number }[]; now: number }) {
@@ -88,6 +89,7 @@ function Exchange({ run, live, now }: { run: Run; live: boolean; now: number }) 
         {proof && <p className="text-ok">{proof.text}</p>}
         {run.error && <p className="text-thread">{run.error}</p>}
 
+        {run.data && run.data.length > 0 && <DataTable rows={run.data} name={run.task} />}
         <Filmstrip events={run.events} live={live} />
         <Steps events={run.events} open={live} />
       </div>
@@ -168,5 +170,44 @@ function Filmstrip({ events, live }: { events: RunEvent[]; live: boolean }) {
         </div>
       )}
     </>
+  );
+}
+
+// Rows the agent collected, with a CSV download (a real file save; this page runs locally, not in a sandbox).
+function DataTable({ rows, name }: { rows: Record<string, string>[]; name: string }) {
+  const cols = Object.keys(rows[0]);
+  const csv = () => {
+    const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const text = [cols.join(","), ...rows.map(r => cols.map(c => cell(String(r[c] ?? ""))).join(","))].join("\n");
+    const url = URL.createObjectURL(new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `${name.replace(/[^\w]+/g, "-").toLowerCase()}.csv` });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-mono text-xs tracking-wider text-muted uppercase">{rows.length} rows</span>
+        <button type="button" onClick={csv} className="rounded-lg bg-dawn px-3 py-1.5 text-sm font-semibold text-night">Download CSV</button>
+      </div>
+      <div className="max-h-96 overflow-auto rounded-xl border border-line">
+        <table className="w-full border-collapse text-sm">
+          <thead className="sticky top-0 bg-night-3">
+            <tr>
+              <th className="px-3 py-2 text-right font-mono text-xs font-normal text-muted">#</th>
+              {cols.map(c => <th key={c} className="px-3 py-2 text-left font-mono text-xs font-normal tracking-wider text-muted uppercase">{c.replace(/_/g, " ")}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-line">
+                <td className="px-3 py-1.5 text-right font-mono text-xs text-muted tabular-nums">{i + 1}</td>
+                {cols.map(c => <td key={c} className="px-3 py-1.5 tabular-nums">{r[c]}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

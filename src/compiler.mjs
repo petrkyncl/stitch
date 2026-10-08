@@ -59,8 +59,11 @@ export function matchPatterns(patterns, task) {
 
 const SYSTEM = `You turn a recorded Android UI trace into a reusable, parameterized capability.
 Values the user chose (times, names, search words) become params; everything else stays constant.
+If the agent chose a value the request did not give (e.g. the wording of a greeting), make it a param with a "default"
+equal to what was used, so later requests can override it but do not have to.
 Templates use {{param}} with optional filters: {{hour|pad2}} pads to two digits, also |upper |lower |trim.
-Every kept "type" and "find" step needs a template in "typed" (for find it is the text searched for). Drop steps that were detours or that tapped a value which depends
+Every kept "type", "find" and "extract" step needs a template in "typed" (for find the text searched for, for extract
+the number of rows, e.g. "{{count}}" when the request names a number, else the literal number). Drop steps that were detours or that tapped a value which depends
 on the input only incidentally (for example tapping the "07" button in a picker when the hour is also typed).
 When the element itself is chosen by the input (the list item "07:14" to delete, the contact "David" to open), keep the
 step and give its label as a template in "targets", e.g. {"step":2,"label":"{{hour|pad2}}:{{minute}}"}.
@@ -74,7 +77,7 @@ const TOOL = {
     properties: {
       name: { type: 'string', description: 'app.verb_object in lowercase, e.g. clock.set_alarm' },
       description: { type: 'string' },
-      params: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, example: { type: 'string' } }, required: ['name', 'description', 'example'] } },
+      params: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, example: { type: 'string' }, default: { type: 'string', description: 'Value used when the request does not say it' } }, required: ['name', 'description', 'example'] } },
       patterns: { type: 'array', items: { type: 'string' } },
       drop_steps: { type: 'array', items: { type: 'integer' }, description: 'Indices of trace steps to leave out' },
       typed: { type: 'array', items: { type: 'object', properties: { step: { type: 'integer' }, template: { type: 'string' } }, required: ['step', 'template'] } },
@@ -110,7 +113,7 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
     const problems = validate(spec, task, trace, expect);
     if (!problems.length) {
       const program = trace
-        .map((s, i) => (s.op === 'type' || s.op === 'find' ? { ...s, text: spec.typed[String(i)] } : s))
+        .map((s, i) => (['type', 'find', 'extract'].includes(s.op) ? { ...s, text: spec.typed[String(i)] } : s))
         .map((s, i) => (spec.targets[String(i)] && s.sel ? { ...s, sel: { ...s.sel, labelHas: spec.targets[String(i)], templated: true } } : s))
         .filter((_, i) => i === 0 || !spec.drop.has(i));
       const manifest = { ...manifestFor(program), app: trace[0]?.pkg };
@@ -153,13 +156,15 @@ function validate(spec, task, trace, expect) {
   const problems = [];
   if (!spec.name || !/^[a-z0-9_]+\.[a-z0-9_]+$/.test(spec.name)) problems.push('name must look like app.verb_object');
   const params = (spec.params || []).map(p => p.name);
-  const got = matchPatterns(spec.patterns, task);
+  const matched = matchPatterns(spec.patterns, task);
+  // Params the request did not mention take their default.
+  const got = matched && { ...Object.fromEntries((spec.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default])), ...matched };
   if (!got) problems.push(`no pattern matches the original request "${task}". Your patterns: ${JSON.stringify(spec.patterns)}. They are JavaScript RegExp sources tested case-insensitively with String.match, named groups like (?<hour>\\d{1,2})`);
   for (const p of spec.patterns || []) {
     try { toRegExp(p); } catch { problems.push(`invalid regex ${p}`); }
   }
   if (got) {
-    for (const p of params) if (!(p in got)) problems.push(`pattern does not capture param "${p}"`);
+    for (const p of params) if (!(p in got)) problems.push(`pattern does not capture param "${p}" and it has no default`);
     const values = Object.values(got).filter(v => String(v).length > 0);
     // Label templates only make sense on steps that touch an element.
     for (const k of Object.keys(spec.targets || {})) if (!['tap', 'long_press'].includes(trace[Number(k)]?.op)) delete spec.targets[k];
@@ -175,7 +180,7 @@ function validate(spec, task, trace, expect) {
       if ((s.op === 'tap' || s.op === 'long_press') && values.some(v => new RegExp(`(^|\\D)0*${String(v).replace(/^0+(?=\d)/, '')}(\\D|$)`).test(s.sel?.labelHas || s.label || ''))) {
         problems.push(`step ${i} taps "${s.label}", which depends on the input; drop it, or if the input chooses this element give it a label template in "targets"`);
       }
-      if (s.op !== 'type' && s.op !== 'find') return;
+      if (s.op !== 'type' && s.op !== 'find' && s.op !== 'extract') return;
       let t = spec.typed?.[String(i)];
       if (t !== undefined) { const fixed = autofix(t, got, s.text); if (fixed) { t = fixed; spec.typed[String(i)] = fixed; } }
       if (t === undefined) problems.push(`missing typed template for step ${i}`);

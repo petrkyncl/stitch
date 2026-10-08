@@ -77,6 +77,7 @@ const server = http.createServer(async (req, res) => {
       else return json(res, 400, { error: 'unknown input' });
       return json(res, 200, { ok: true });
     }
+    if (req.method === 'POST' && url.pathname === '/api/stop') return json(res, 200, { stopping: agent.stop() });
     if (req.method === 'POST' && url.pathname === '/api/session') { await agent.newSession(); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/approve') { await agent.approve((await body(req)).name); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/break') { await agent.simulateUpdate((await body(req)).name); return json(res, 200, agent.state()); }
