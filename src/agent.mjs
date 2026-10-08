@@ -183,7 +183,7 @@ export class Agent {
     return { cap, params: { ...defaults, ...(out.params || {}) } };
   }
 
-  async useExisting({ cap, params }, task, meter, emit) {
+  async useExisting({ cap, params }, task, meter, emit, { repair = true } = {}) {
     // It runs right up to the step that sends, pays or deletes, then asks, with the result of every step before
     // it on screen. An "always" from an earlier run means it does not ask.
     const confirm = async step => {
@@ -213,10 +213,21 @@ export class Agent {
       emit('blocked', { text: `${cap.name} ran its irreversible step, but the check after it failed: ${res.reason}. Not retrying; check the phone.` });
       return { path: 'failed', ok: false, capability: `${cap.name} v${cap.version}`, error: res.reason };
     }
+    if (!repair) {
+      emit('error', { text: `${cap.name} v${cap.version} failed at step ${res.step}: ${res.reason}` });
+      return { path: 'failed', ok: false, capability: `${cap.name} v${cap.version}`, error: res.reason };
+    }
     // It broke. Evolve: explore again from the same app, rebuild, retest, install the next version.
     emit('broken', { text: `${cap.name} v${cap.version} failed at step ${res.step}: ${res.reason}. Repairing.` });
     const explored = await explore({ task, meter, emit, pkg: cap.steps[0].pkg });
     const next = await compile({ task, ...explored, meter, emit, previous: cap });
+    if (explored.held) {
+      // The repaired program ends in a send: it cannot be tested for real, so save it held and finish the request
+      // with it, asking at the send.
+      const fixed = await this.install(next, cap, `repaired after: ${res.reason}`, { passed: 0, total: 0 });
+      const done = await this.useExisting({ cap: fixed, params: this.registry.match(task)?.params || params }, task, meter, emit, { repair: false });
+      return { ...done, path: done.ok ? 'repaired' : done.path };
+    }
     const installed = await this.testAndInstall(next, meter, emit, cap, `repaired after: ${res.reason}`);
     return { path: 'repaired', ok: installed.status === 'installed', capability: `${installed.name} v${installed.version}`, data: explored.data };
   }
@@ -231,7 +242,7 @@ export class Agent {
       // The capability is written but held. Ask now, and if allowed, finish the request with it as code.
       const hit = this.registry.match(task);
       if (hit?.cap.name !== cap.name) return { path: 'held', ok: false, capability: `${cap.name} v${cap.version}` };
-      const done = await this.useExisting(hit, task, meter, emit);
+      const done = await this.useExisting(hit, task, meter, emit, { repair: false });
       return { ...done, path: done.ok ? 'learned' : done.path };
     }
     const cap = await this.testAndInstall(spec, meter, emit, null, `learned from "${task}"`);

@@ -4,7 +4,8 @@ export const GRANTED = Object.freeze({
   effects: Object.freeze(['local']),
 });
 
-const EXTERNAL = /\b(send|post|publish|pay|buy|order|purchase|checkout|call|delete|remove|share|submit|transfer|odeslat|zaplatit|smazat)\b/i;
+// Agreeing to terms and granting permissions are a person's decision too, not only sending, paying and deleting.
+const EXTERNAL = /\b(send|post|publish|pay|buy|order|purchase|checkout|call|delete|remove|share|submit|transfer|agree|accept|allow|grant|consent|odeslat|zaplatit|smazat|souhlas\w*|povolit)\b/i;
 
 export const isExternalLabel = label => EXTERNAL.test(String(label || ''));
 

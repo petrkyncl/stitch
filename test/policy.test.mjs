@@ -15,3 +15,8 @@ test('capabilities can grow, authority cannot', () => {
   assert.equal(review(held).allowed, false);
   assert.ok(Object.isFrozen(GRANTED) && Object.isFrozen(GRANTED.effects));
 });
+
+test('agreeing to terms and granting permissions need a person', () => {
+  for (const l of ['Agree', 'I agree', 'Accept all', 'Allow', 'Grant access']) assert.ok(isExternalLabel(l), l);
+  for (const l of ['Ask Gemini', 'Add alarm', 'Search here', 'Allowance']) assert.ok(!isExternalLabel(l), l);
+});

@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent } from "react";
 import { api, VIDEO, type Device } from "@/lib/engine";
 
 // Live phone video you can drive with the mouse: click = tap, drag = swipe.
-export function PhonePanel({ device, epoch }: { device: Device | null; epoch: number }) {
+export function PhonePanel({ device, epoch, boxes }: { device: Device | null; epoch: number; boxes?: boolean }) {
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   const w = device?.width || 1080;
   const h = device?.height || 2340;
@@ -47,6 +47,8 @@ export function PhonePanel({ device, epoch }: { device: Device | null; epoch: nu
         <NavButton label="Home" onClick={() => press("home")} d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" />
         <NavButton label="Recent apps" onClick={() => press("recents")} d="M5 5h14v14H5z" />
         <NavButton label="Notifications" onClick={() => press("notifications")} d="M6 17h12l-2-3v-4a4 4 0 00-8 0v4zM10 20h4" />
+        <span className="mx-1 h-6 w-px bg-line" aria-hidden />
+        <BoxesSwitch on={boxes} />
       </div>
     </div>
   );
@@ -82,4 +84,24 @@ function Pill({ children, tone }: { children: React.ReactNode; tone?: "ok" | "ba
 
 function Dot({ ok }: { ok: boolean }) {
   return <span className={`size-2.5 rounded-full ${ok ? "bg-ok shadow-[0_0_10px] shadow-ok" : "bg-thread"}`} />;
+}
+
+// Live boxes around what the agent can see in the app in front, drawn on the phone itself. Applies at once.
+function BoxesSwitch({ on }: { on?: boolean }) {
+  const [mine, setMine] = useState<boolean | null>(null); // the click shows at once, before the engine confirms
+  const value = mine ?? on ?? true;
+  const flip = () => {
+    const next = !value;
+    setMine(next);
+    api("/api/overlay", { on: next }).catch(() => setMine(!next));
+  };
+  return (
+    <button type="button" role="switch" aria-checked={value} onClick={flip} title="Boxes around every element the agent can see"
+      className={`flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm ${value ? "border-dawn/60 text-dawn" : "border-line text-muted hover:text-flesh"}`}>
+      <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="5" rx="1.5" /><rect x="13" y="11" width="8" height="10" rx="1.5" /><rect x="3" y="14" width="8" height="7" rx="1.5" />
+      </svg>
+      Boxes
+    </button>
+  );
 }

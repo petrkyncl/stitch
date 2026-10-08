@@ -61,6 +61,7 @@ export type EngineState = {
   provider: string;
   hands: boolean;
   hasKey: boolean;
+  boxes?: boolean;
 };
 
 export type Device = {

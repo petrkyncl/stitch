@@ -99,7 +99,7 @@ export default function Studio() {
         </section>
 
         <section className="flex min-h-[640px] flex-col lg:min-h-0" aria-label="Phone">
-          <PhonePanel device={device} epoch={epoch} />
+          <PhonePanel device={device} epoch={epoch} boxes={state?.boxes} />
         </section>
 
         <section className="min-h-0 overflow-y-auto lg:col-span-2 2xl:col-span-1" aria-label="Cost and capabilities">

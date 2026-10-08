@@ -36,7 +36,11 @@ class HandsService : AccessibilityService() {
         thread(name = "stitch-hands", isDaemon = true) { serve() }
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val type = event?.eventType ?: return
+        // The live boxes follow the screen; a scroll or a new screen also drops the "about to tap" marker.
+        overlay.changed(moved = type == AccessibilityEvent.TYPE_VIEW_SCROLLED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+    }
     override fun onInterrupt() {}
 
     override fun onDestroy() {
@@ -91,14 +95,15 @@ class HandsService : AccessibilityService() {
     }
 
     private fun route(path: String, body: JSONObject): JSONObject = when (path.substringBefore("?")) {
-        // Boxes around what the agent read, a bold one around what it is about to use. Screen coordinates.
+        // Live boxes on or off; a bold box around the element the agent is about to use. Screen coordinates.
         "/overlay" -> {
-            fun rect(a: JSONArray?) = a?.let { android.graphics.RectF(it.getDouble(0).toFloat(), it.getDouble(1).toFloat(), it.getDouble(2).toFloat(), it.getDouble(3).toFloat()) }
-            val list = body.optJSONArray("boxes") ?: JSONArray()
-            val boxes = (0 until list.length()).mapNotNull { rect(list.optJSONArray(it)) }
-            if (boxes.isEmpty() && !body.has("target")) overlay.hide()
-            else overlay.show(boxes, rect(body.optJSONArray("target")), body.optLong("ms", 1400))
-            JSONObject().put("ok", true)
+            if (body.has("live")) overlay.setLive(body.optBoolean("live"))
+            if (body.has("target")) {
+                val a = body.optJSONArray("target")
+                val rect = a?.let { android.graphics.RectF(it.getDouble(0).toFloat(), it.getDouble(1).toFloat(), it.getDouble(2).toFloat(), it.getDouble(3).toFloat()) }
+                overlay.target(rect, body.optLong("ms", 1600))
+            }
+            JSONObject().put("ok", true).put("live", overlay.live)
         }
         "/ping" -> JSONObject().put("ok", true)
         "/tree" -> tree(path.substringAfter("pkg=", "").substringBefore("&"))

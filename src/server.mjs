@@ -3,7 +3,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { Registry } from './registry.mjs';
 import { Agent } from './agent.mjs';
-import { screenshot, handsAvailable, deviceInfo, tapAt, swipeAt, globalAction, installedApps, appIcon } from './adb.mjs';
+import { screenshot, handsAvailable, deviceInfo, tapAt, swipeAt, globalAction, installedApps, appIcon, getLiveBoxes, setLiveBoxes } from './adb.mjs';
 import { model, provider, hasCredentials } from './llm.mjs';
 import { serveStream } from './stream.mjs';
 
@@ -44,7 +44,7 @@ const server = http.createServer(async (req, res) => {
       req.on('close', () => clients.delete(res));
       return;
     }
-    if (url.pathname === '/api/state') return json(res, 200, { ...agent.state(), model, hands: await handsAvailable(), provider, hasKey: hasCredentials });
+    if (url.pathname === '/api/state') return json(res, 200, { ...agent.state(), model, hands: await handsAvailable(), boxes: getLiveBoxes(), provider, hasKey: hasCredentials });
     if (url.pathname === '/api/stream.mjpg') return serveStream(req, res);
     if (url.pathname === '/api/screen.png') {
       const png = await screenshot();
@@ -95,6 +95,7 @@ const server = http.createServer(async (req, res) => {
       const ok = agent.decide((await body(req)).decision);
       return json(res, ok ? 200 : 409, { ok, ...(ok ? {} : { error: 'Nothing is waiting for permission' }) });
     }
+    if (req.method === 'POST' && url.pathname === '/api/overlay') return json(res, 200, { boxes: await setLiveBoxes((await body(req)).on) });
     if (req.method === 'POST' && url.pathname === '/api/revoke') { await agent.revoke((await body(req)).name); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/approve') { await agent.approve((await body(req)).name); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/break') { await agent.simulateUpdate((await body(req)).name); return json(res, 200, agent.state()); }

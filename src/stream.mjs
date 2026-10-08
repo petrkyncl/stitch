@@ -9,7 +9,7 @@ const SERIAL = process.env.ANDROID_SERIAL || '';
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
 const SERVER_JAR = process.env.SCRCPY_SERVER || '/opt/homebrew/share/scrcpy/scrcpy-server';
 const SERVER_VERSION = process.env.SCRCPY_VERSION || '4.0';
-const LOCAL_PORT = 27183;
+const LOCAL_PORT = Number(process.env.SCRCPY_PORT || 27183); // one per device when several engines run
 const SCID = '0000abcd';
 
 const viewers = new Set();

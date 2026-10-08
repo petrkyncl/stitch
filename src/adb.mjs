@@ -58,7 +58,9 @@ export function parseNodes(xml) {
 
 // Stitch Hands: accessibility service on the phone, reached through `adb forward`. ~20 ms per screen
 // instead of ~2.5 s for a uiautomator dump. Falls back to the dump when it is not running.
-const HANDS = 'http://127.0.0.1:7912';
+// Each engine forwards its own local port to Hands' 7912 on its device, so several devices can run side by side.
+const HANDS_PORT = Number(process.env.HANDS_PORT || 7912);
+const HANDS = `http://127.0.0.1:${HANDS_PORT}`;
 // Remembered for a few seconds only, so a phone that was unplugged and comes back is picked up again.
 let handsReady = null;
 let handsCheckedAt = 0;
@@ -82,9 +84,11 @@ export async function handsAvailable() {
   if (handsReady === true || (handsReady === false && Date.now() - handsCheckedAt < 5000)) return handsReady;
   handsCheckedAt = Date.now();
   try {
-    await adb(['forward', 'tcp:7912', 'tcp:7912']);
+    await adb(['forward', `tcp:${HANDS_PORT}`, 'tcp:7912']);
     const res = await fetch(HANDS + '/ping', { signal: AbortSignal.timeout(2000) });
     handsReady = (await res.json()).ok === true;
+    // A freshly started Hands knows nothing of the boxes switch; tell it.
+    if (handsReady) hands('/overlay', { live: liveBoxes }).catch(() => {});
   } catch { handsReady = false; }
   return handsReady;
 }
@@ -198,17 +202,19 @@ export async function returnToTabs(pkg, tabs) {
   return tapped;
 }
 
-// Show on the phone what the agent read and what it is about to touch: thin boxes around the elements, a bold one
-// around the target. Drawn by Hands in an overlay that takes no touches; OVERLAY=0 turns it off.
+// Live boxes around the elements of the app in front, drawn by Hands as the screen changes (switch in the studio,
+// on by default, OVERLAY=0 starts with them off), and a bold box around the element the agent is about to use.
+let liveBoxes = process.env.OVERLAY !== '0';
+export const getLiveBoxes = () => liveBoxes;
+export async function setLiveBoxes(on) {
+  liveBoxes = !!on;
+  if (await handsAvailable()) await hands('/overlay', { live: liveBoxes });
+  return liveBoxes;
+}
+
 export async function highlight(nodes, target = null, ms = null) {
-  if (process.env.OVERLAY === '0' || !(await handsAvailable())) return;
-  const area = n => (n.bounds[2] - n.bounds[0]) * (n.bounds[3] - n.bounds[1]);
-  const screenArea = Math.max(...nodes.map(area), 1);
-  const boxes = nodes
-    .filter(n => n.bounds && area(n) > 0 && area(n) < screenArea * 0.5 && (n.clickable || n.editable || label(n)))
-    .slice(0, 150)
-    .map(n => n.bounds);
-  await hands('/overlay', { boxes, target: target?.bounds ?? null, ms: ms ?? (target ? 1600 : 1000) }).catch(() => {});
+  if (!(await handsAvailable())) return;
+  await hands('/overlay', { target: target?.bounds ?? null, ms: ms ?? 1600 }).catch(() => {});
 }
 
 // Enter/Send/Search on the focused field, through the keyboard so the app's own action fires.
@@ -385,7 +391,7 @@ export async function deviceInfo() {
     if (line) {
       info.connected = true;
       info.serial = line.split(/\s+/)[0];
-      info.transport = /usb:/.test(line) ? 'USB' : /:\d+$/.test(info.serial) ? 'Wi-Fi' : 'ADB';
+      info.transport = /usb:/.test(line) ? 'USB' : /^emulator-/.test(info.serial) ? 'Emulator' : /:\d+$/.test(info.serial) ? 'Wi-Fi' : 'ADB';
       info.model = (line.match(/model:(\S+)/) || [])[1]?.replace(/_/g, ' ');
       const fromHands = await handsAvailable() && await hands('/device').catch(() => null);
       if (fromHands) {
