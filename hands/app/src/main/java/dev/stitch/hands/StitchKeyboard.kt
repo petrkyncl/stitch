@@ -340,9 +340,16 @@ class StitchKeyboard : InputMethodService() {
 
     fun type(text: String, replace: Boolean, human: Boolean): Boolean {
         if (replace) onMain {
+            // Clear what is there by deleting around the cursor. "Select all" from the context menu is ignored by
+            // some fields (Jetpack Compose, e.g. the Claude app), which left an old draft and doubled the text.
             val ic = currentInputConnection ?: return@onMain
-            ic.performContextMenuAction(android.R.id.selectAll)
-            ic.commitText("", 1)
+            ic.beginBatchEdit()
+            ic.finishComposingText()
+            if (!ic.getSelectedText(0).isNullOrEmpty()) ic.commitText("", 1)
+            val before = ic.getTextBeforeCursor(100_000, 0)?.length ?: 0
+            val after = ic.getTextAfterCursor(100_000, 0)?.length ?: 0
+            if (before + after > 0) ic.deleteSurroundingText(before, after)
+            ic.endBatchEdit()
         }
         if (!human) return onMain { currentInputConnection?.commitText(text, 1) ?: false }
         for (ch in text) {

@@ -152,9 +152,13 @@ const HUMAN_TYPING = process.env.HUMAN_TYPING === '1';
 
 async function fieldShows(node, text) {
   const after = await observeHands();
-  const same = after.nodes.find(n => n.resourceId === node.resourceId && Math.abs(n.cy - node.cy) < 40 && Math.abs(n.cx - node.cx) < 40)
-    || after.nodes.find(n => n.focused && n.editable);
-  return !!same && label(same).includes(String(text));
+  // Only text fields count; a field without an id would otherwise match the empty container around it.
+  const fields = after.nodes.filter(n => n.editable);
+  const near = n => Math.abs(n.cy - node.cy) < 60 && Math.abs(n.cx - node.cx) < 60;
+  const same = fields.find(n => near(n) && (!node.resourceId || n.resourceId === node.resourceId))
+    || fields.find(n => n.focused) || (fields.length === 1 ? fields[0] : null);
+  // Exactly once: a field that still held an old draft shows the text twice and has to be replaced.
+  return !!same && label(same).split(String(text)).length === 2;
 }
 
 export async function typeInto(node, text) {
