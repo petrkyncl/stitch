@@ -26,9 +26,12 @@ body {
   color: var(--color-flesh);
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-dawn);
-  outline-offset: 2px;
+/* In the base layer, so a component can replace it (the composer rings its whole box instead). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-dawn);
+    outline-offset: 2px;
+  }
 }
 
 /* Big monitors: scale every rem-based size so the studio reads well at 1440p and 4K. */

@@ -50,7 +50,7 @@ class StitchKeyboard : InputMethodService() {
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setBackgroundColor(BG)
-            setPadding(dp(3), dp(8), dp(3), dp(22))
+            setPadding(dp(3), dp(6), dp(3), dp(22))
         }
         // The keyboard is drawn edge to edge, and the system puts its own buttons (switch keyboard, hide) in the
         // navigation bar below it. Keep the keys above that bar, whatever its height on this phone.
@@ -58,7 +58,7 @@ class StitchKeyboard : InputMethodService() {
             val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(android.view.WindowInsets.Type.navigationBars() or android.view.WindowInsets.Type.tappableElement()).bottom
             } else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
-            v.setPadding(dp(3), dp(8), dp(3), maxOf(bottom, dp(22)) + dp(4))
+            v.setPadding(dp(3), dp(6), dp(3), maxOf(bottom, dp(22)) + dp(2))
             insets
         }
         root = box
@@ -115,7 +115,7 @@ class StitchKeyboard : InputMethodService() {
             KeyView(this, Kind.ICON, icon = Icon.GLOBE, fn = true, weight = 1.25f, onLong = { imm.showInputMethodPicker() }) {
                 if (!switchToPreviousInputMethod()) imm.showInputMethodPicker()
             },
-            KeyView(this, Kind.SMALL, "space", weight = 5f) { space() },
+            KeyView(this, Kind.SMALL, "Stitch", muted = true, weight = 5f) { space() },
             KeyView(this, Kind.SMALL, action.first, fn = !action.second, accent = action.second, weight = 2.5f) { enter() },
         )))
     }
@@ -176,7 +176,7 @@ class StitchKeyboard : InputMethodService() {
 
     private fun row(keys: List<View>) = android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.HORIZONTAL
-        layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(54))
+        layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(46))
         keys.forEach { addView(it) }
     }
 
@@ -196,6 +196,7 @@ class StitchKeyboard : InputMethodService() {
         private val fn: Boolean = false,
         private val accent: Boolean = false,
         private val active: Boolean = false,
+        private val muted: Boolean = false,
         private val repeat: Boolean = false,
         weight: Float,
         private val onLong: (() -> Unit)? = null,
@@ -209,7 +210,7 @@ class StitchKeyboard : InputMethodService() {
             typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
         }
         private val stroke = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.STROKE; strokeWidth = dpf(1.7f)
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = dpf(1.5f)
             strokeJoin = android.graphics.Paint.Join.ROUND; strokeCap = android.graphics.Paint.Cap.ROUND
         }
         private val repeater = object : Runnable {
@@ -224,7 +225,7 @@ class StitchKeyboard : InputMethodService() {
         }
 
         override fun onDraw(canvas: android.graphics.Canvas) {
-            val gapX = dpf(3f); val gapY = dpf(5f); val r = dpf(6f)
+            val gapX = dpf(2.5f); val gapY = dpf(4f); val r = dpf(5f)
             face.set(gapX, gapY, width - gapX, height - gapY)
             // the key's lower edge, like a physical key catching light from above
             paint.color = SHADOW
@@ -241,13 +242,13 @@ class StitchKeyboard : InputMethodService() {
             val cx = face.centerX(); val cy = face.centerY()
             when (kind) {
                 Kind.CHAR -> {
-                    text.color = ink; text.textSize = dpf(if (label[0].isLowerCase()) 24f else 22f)
+                    text.color = ink; text.textSize = dpf(if (label[0].isLowerCase()) 20f else 18.5f)
                     // lowercase letters sit a touch lower, so their visual center matches the capitals
-                    val lift = if (label[0].isLowerCase()) dpf(1.5f) else 0f
+                    val lift = if (label[0].isLowerCase()) dpf(1.2f) else 0f
                     canvas.drawText(label, cx, cy - (text.descent() + text.ascent()) / 2 - lift, text)
                 }
                 Kind.SMALL -> {
-                    text.color = ink; text.textSize = dpf(16f)
+                    text.color = if (muted) MUTED else ink; text.textSize = dpf(if (muted) 13f else 14f)
                     canvas.drawText(label, cx, cy - (text.descent() + text.ascent()) / 2, text)
                 }
                 Kind.ICON -> drawIcon(canvas, cx, cy, ink)
@@ -255,7 +256,7 @@ class StitchKeyboard : InputMethodService() {
         }
 
         private fun drawIcon(canvas: android.graphics.Canvas, cx: Float, cy: Float, ink: Int) {
-            val u = dpf(1f)
+            val u = dpf(0.82f)
             stroke.color = ink
             val path = android.graphics.Path()
             fun p(x: Float, y: Float, first: Boolean = false) = if (first) path.moveTo(cx + x * u, cy + y * u) else path.lineTo(cx + x * u, cy + y * u)
@@ -374,6 +375,7 @@ class StitchKeyboard : InputMethodService() {
         private val FN = Color.parseColor("#251D22")
         private val SHADOW = Color.parseColor("#070406")
         private val INK = Color.parseColor("#F4ECE6")
+        private val MUTED = Color.parseColor("#9C8C95")
         private val ACCENT = Color.parseColor("#F3A64A")
         private val ACCENT_DOWN = Color.parseColor("#C98634")
     }
