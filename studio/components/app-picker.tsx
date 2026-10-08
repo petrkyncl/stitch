@@ -26,7 +26,7 @@ export function AppPicker({ value, onChange }: { value: string | null; onChange:
   return (
     <div ref={box} className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${value ? "border-dawn/60 text-flesh" : "border-line text-muted hover:text-flesh"}`}>
+        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm hover:bg-night-3 ${value ? "bg-night-3 text-flesh" : "text-muted hover:text-flesh"}`}>
         {value ? <><AppIcon pkg={value} label={selected?.label || value} size={18} /> {selected?.label || value}</> : "Any app"}
         <span aria-hidden className="text-xs">▾</span>
       </button>

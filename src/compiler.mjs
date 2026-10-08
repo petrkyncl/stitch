@@ -128,11 +128,14 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
       const manifest = { ...manifestFor(program), app: trace[0]?.pkg };
       const { drop, drop_steps, typed, targets, ...clean } = spec;
       if (!expect) {
-        // Nothing was shown as proof (the run stopped before an irreversible step). Check instead that the element
-        // the capability acted on is gone afterwards, e.g. the deleted alarm.
+        // Nothing was shown as proof (the run stopped before an irreversible step), so check the effect instead.
+        // If it typed something, the proof is that text showing outside the field, sent (a message, a comment).
+        // Otherwise, the element it acted on is gone (a deleted alarm).
         clean.expect = '';
+        const typed = [...program].reverse().find(st => st.op === 'type' && st.text);
         const chosen = program.find(st => st.sel?.templated);
-        if (chosen) clean.gone = chosen.sel.labelHas;
+        if (typed) clean.sent = typed.text;
+        else if (chosen) clean.gone = chosen.sel.labelHas;
       }
       return { ...clean, name: previous?.name || spec.name, steps: program, manifest };
     }

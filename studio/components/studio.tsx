@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "@/lib/engine";
 import { useEngine } from "./use-engine";
 import { Chat } from "./chat";
@@ -62,25 +62,25 @@ export default function Studio() {
             <Chat runs={state?.runs ?? []} live={live} sessions={sessions} now={now}
               pending={state?.pending ?? null} onDecide={decision => act("/api/permission", { decision })} />
           </div>
-          <form onSubmit={submit} className="flex flex-col gap-3 rounded-2xl border border-line bg-night-2 p-3">
-            <div className="flex gap-3">
-              <label htmlFor="task" className="sr-only">Ask the agent</label>
-              <input id="task" value={task} onChange={e => setTask(e.target.value)} autoComplete="off"
-                placeholder="Ask the phone for something, e.g. Set an alarm for 7:14"
-                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-lg text-flesh outline-none placeholder:text-muted/70" />
-              {busy
-                ? <button type="button" onClick={stop} title="Stop (Esc)" className="flex items-center gap-2 rounded-xl border border-thread px-6 text-lg font-semibold text-thread hover:bg-thread hover:text-night">
-                    <span className="size-3 rounded-[3px] bg-current" /> Stop
-                  </button>
-                : <button type="submit" disabled={!task.trim()} className="rounded-xl bg-dawn px-6 text-lg font-semibold text-night disabled:opacity-40">Send</button>}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 px-1">
+          <form onSubmit={submit} className="flex flex-col gap-1 rounded-2xl border border-line bg-night-2 px-3 pt-2.5 pb-2 focus-within:border-muted/60">
+            <label htmlFor="task" className="sr-only">Ask the agent</label>
+            <input id="task" value={task} onChange={e => setTask(e.target.value)} autoComplete="off"
+              placeholder={busy ? "Working on it. Esc stops." : "Ask the phone for something"}
+              className="min-w-0 bg-transparent px-1 py-1.5 text-base text-flesh outline-none placeholder:text-muted/70" />
+            <div className="flex items-center gap-2">
               <AppPicker value={app} onChange={setApp} />
-              <span className="mx-1 h-5 w-px bg-line" aria-hidden />
-              {EXAMPLES.map(x => (
-                <button key={x} type="button" onClick={() => setTask(x)} className="rounded-full border border-line px-3 py-1 text-sm text-muted hover:text-flesh">{x}</button>
-              ))}
-              {error && <span className="text-sm text-thread">{error}</span>}
+              <Examples onPick={setTask} />
+              {error && <span className="truncate text-sm text-thread">{error}</span>}
+              <span className="flex-1" />
+              {busy
+                ? <button type="button" onClick={stop} title="Stop (Esc)" aria-label="Stop"
+                    className="grid size-8 place-items-center rounded-full bg-flesh text-night hover:bg-thread">
+                    <span className="size-2.5 rounded-[2px] bg-current" />
+                  </button>
+                : <button type="submit" disabled={!task.trim()} title="Send (Enter)" aria-label="Send"
+                    className="grid size-8 place-items-center rounded-full bg-dawn text-night disabled:bg-night-3 disabled:text-muted">
+                    <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></svg>
+                  </button>}
             </div>
           </form>
         </section>
@@ -106,4 +106,30 @@ export default function Studio() {
 
 function Chip({ children, tone }: { children: React.ReactNode; tone?: "bad" }) {
   return <span className={`rounded-full border px-3 py-1 ${tone === "bad" ? "border-thread text-thread" : "border-line text-muted"}`}>{children}</span>;
+}
+
+// Example requests, tucked into a small menu so they do not crowd the composer.
+function Examples({ onPick }: { onPick: (text: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-muted hover:bg-night-3 hover:text-flesh">
+        Examples <span aria-hidden className="text-xs">▾</span>
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 z-40 mb-2 flex w-96 flex-col overflow-hidden rounded-xl border border-line bg-night-2 py-1 shadow-2xl">
+          {EXAMPLES.map(x => (
+            <button key={x} type="button" onClick={() => { onPick(x); setOpen(false); }} className="px-3 py-2 text-left text-sm hover:bg-night-3">{x}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

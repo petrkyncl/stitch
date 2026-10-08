@@ -71,23 +71,30 @@ function Exchange({ run, live, now, ask }: { run: Run; live: boolean; now: numbe
   const elapsed = live ? now - run.at : run.ms;
   const proof = [...run.events].reverse().find(e => e.type === "done" || (e.type === "test" && /passed/i.test(e.text || "")));
   return (
-    <div className="flex flex-col gap-3">
-      <div className="self-end rounded-2xl rounded-br-sm bg-night-3 px-5 py-3 text-lg font-medium">{run.task}</div>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col items-end gap-1">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-night-3 px-4 py-2.5">{run.task}</div>
+        <time className="px-1 font-mono text-[11px] text-muted">{clock(run.at)}</time>
+      </div>
 
-      <div className="flex max-w-[52rem] flex-col gap-4 rounded-2xl rounded-bl-sm border border-line bg-night-2 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs tracking-wider uppercase ${outcome.tone}`}>
-            {live && <span className="size-2 animate-pulse rounded-full bg-dawn" />}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <StitchMark />
+          <span className="font-semibold">Stitch</span>
+          <span className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px] tracking-wider uppercase ${outcome.tone}`}>
+            {live && <span className="size-1.5 animate-pulse rounded-full bg-dawn" />}
             {outcome.label}
           </span>
-          {run.capability && <span className="font-mono text-sm text-muted">{run.capability}</span>}
+          <span className="flex-1" />
+          {run.capability && <span className="truncate font-mono text-xs text-muted">{run.capability}</span>}
         </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Stat value={secs(elapsed)} label="time" />
-          <Stat value={String(run.calls ?? 0)} label="model calls" accent={!live && run.calls === 0} />
-          <Stat value={money(run.cost)} label="cost" accent={!live && run.cost === 0} />
-          <Stat value={((run.tokensIn ?? 0) + (run.tokensOut ?? 0)).toLocaleString()} label="tokens" />
+      <div className="flex max-w-[52rem] flex-col gap-3 rounded-2xl rounded-tl-md border border-line bg-night-2 p-4">
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+          <Meta value={secs(elapsed)} label="" />
+          <Meta value={String(run.calls ?? 0)} label={run.calls === 1 ? "model call" : "model calls"} accent={!live && run.calls === 0} />
+          <Meta value={money(run.cost)} label="cost" accent={!live && run.cost === 0} />
+          <Meta value={((run.tokensIn ?? 0) + (run.tokensOut ?? 0)).toLocaleString()} label="tokens" />
         </div>
 
         {proof && <p className="text-ok">{proof.text}</p>}
@@ -98,16 +105,31 @@ function Exchange({ run, live, now, ask }: { run: Run; live: boolean; now: numbe
         <Steps events={run.events} open={live} />
         {waiting && ask?.pending && <Permission pending={ask.pending} onDecide={ask.onDecide} />}
       </div>
+      </div>
     </div>
   );
 }
 
-function Stat({ value, label, accent }: { value: string; label: string; accent?: boolean }) {
+const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+// The agent's mark: a stitched seam, its whole idea in one glyph.
+function StitchMark() {
   return (
-    <div className="flex flex-col">
-      <span className={`font-display text-4xl leading-none font-black tabular-nums ${accent ? "text-ok" : "text-flesh"}`}>{value}</span>
-      <span className="mt-1 font-mono text-xs text-muted">{label}</span>
-    </div>
+    <span className="grid size-6 place-items-center rounded-md bg-dawn text-night" aria-hidden>
+      <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <path d="M2 8h12" strokeDasharray="2.2 1.8" />
+        <path d="M4 5l1.5 6M8 5l1.5 6M12 5l-1.5 6" />
+      </svg>
+    </span>
+  );
+}
+
+function Meta({ value, label, accent }: { value: string; label: string; accent?: boolean }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span className={`font-mono text-lg font-semibold tabular-nums ${accent ? "text-ok" : "text-flesh"}`}>{value}</span>
+      {label && <span className="text-sm text-muted">{label}</span>}
+    </span>
   );
 }
 

@@ -102,6 +102,16 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       await phone.sleep(350);
     }
   }
+  if (cap.sent) {
+    // Something was typed and then sent: the text must now show outside the input field, as a sent message.
+    const want = padTimes(render(cap.sent, params));
+    for (let i = 0; i < 10; i++) {
+      const screen = await phone.observe(pkg);
+      if (screenHasText(screen.nodes.filter(n => !n.editable), want)) return { ok: true, verified: `"${want}" is on screen as sent` };
+      await phone.sleep(300);
+    }
+    return { ok: false, irreversible, step: cap.steps.length, reason: `"${want}" did not appear outside the input field` };
+  }
   if (cap.gone) {
     const gone = padTimes(render(cap.gone, params));
     for (let i = 0; i < 8; i++) {

@@ -33,7 +33,7 @@ export function PhonePanel({ device, epoch }: { device: Device | null; epoch: nu
         <div
           onPointerDown={down}
           onPointerUp={up}
-          className="w-full max-w-[460px] shrink-0 cursor-pointer touch-none overflow-hidden rounded-[34px] border-2 border-line bg-black select-none 2xl:h-full 2xl:w-auto 2xl:max-w-full"
+          className="w-full max-w-[460px] shrink-0 cursor-pointer touch-none overflow-hidden rounded-[18px] border-2 border-line bg-black select-none 2xl:h-full 2xl:w-auto 2xl:max-w-full"
           style={{ aspectRatio: `${w} / ${h}` }}
           title="Click to tap, drag to swipe"
         >
