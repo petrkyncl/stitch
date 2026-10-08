@@ -91,6 +91,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/stop') return json(res, 200, { stopping: agent.stop() });
     if (req.method === 'POST' && url.pathname === '/api/session') { await agent.newSession(); return json(res, 200, agent.state()); }
+    if (req.method === 'POST' && url.pathname === '/api/permission') {
+      const ok = agent.decide((await body(req)).decision);
+      return json(res, ok ? 200 : 409, { ok, ...(ok ? {} : { error: 'Nothing is waiting for permission' }) });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/revoke') { await agent.revoke((await body(req)).name); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/approve') { await agent.approve((await body(req)).name); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/break') { await agent.simulateUpdate((await body(req)).name); return json(res, 200, agent.state()); }
 

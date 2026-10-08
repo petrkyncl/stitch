@@ -65,6 +65,10 @@ export function useEngine() {
           case "registry":
             refresh();
             break;
+          case "ask":
+            update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, frame: ev.frame, at: ev.at }] }));
+            refresh(); // brings the pending request, so the prompt shows its buttons
+            break;
           default:
             update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, frame: ev.frame, at: ev.at }] }));
         }
@@ -72,7 +76,7 @@ export function useEngine() {
     };
     connect();
     // Safety net: if an event was missed, the next poll brings the state back in line.
-    const poll = setInterval(() => { if (!liveRef.current) refresh(); }, 5000);
+    const poll = setInterval(() => refresh(), 5000);
     return () => { closed = true; clearTimeout(retry); clearInterval(poll); es?.close(); };
   }, [refresh]);
 

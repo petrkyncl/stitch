@@ -67,7 +67,7 @@ export class Registry {
 }
 
 // "clock.set_alarm" -> "Set alarm", for capabilities learned before titles existed.
-function titleFrom(name) {
+export function titleFrom(name) {
   const verbObject = String(name).split('.').pop().replace(/_/g, ' ');
   return verbObject.charAt(0).toUpperCase() + verbObject.slice(1);
 }

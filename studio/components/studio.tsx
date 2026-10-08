@@ -59,7 +59,8 @@ export default function Studio() {
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]">
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
-            <Chat runs={state?.runs ?? []} live={live} sessions={sessions} now={now} />
+            <Chat runs={state?.runs ?? []} live={live} sessions={sessions} now={now}
+              pending={state?.pending ?? null} onDecide={decision => act("/api/permission", { decision })} />
           </div>
           <form onSubmit={submit} className="flex flex-col gap-3 rounded-2xl border border-line bg-night-2 p-3">
             <div className="flex gap-3">
@@ -94,6 +95,7 @@ export default function Studio() {
             capabilities={state?.capabilities ?? []}
             granted={state?.granted}
             onApprove={name => act("/api/approve", { name })}
+            onRevoke={name => act("/api/revoke", { name })}
             onBreak={name => act("/api/break", { name })}
           />
         </section>

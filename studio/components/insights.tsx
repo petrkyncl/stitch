@@ -9,17 +9,18 @@ type Props = {
   capabilities: Capability[];
   granted?: EngineState["granted"];
   onApprove: (name: string) => void;
+  onRevoke: (name: string) => void;
   onBreak: (name: string) => void;
 };
 
 const capName = (r: Run) => r.capability?.replace(/ v\d+$/, "");
 
-export function Insights({ runs, capabilities, granted, onApprove, onBreak }: Props) {
+export function Insights({ runs, capabilities, granted, onApprove, onRevoke, onBreak }: Props) {
   return (
     <div className="flex flex-col gap-8">
       <LearnVsReuse runs={runs} />
       <Totals runs={runs} />
-      <Registry capabilities={capabilities} granted={granted} onApprove={onApprove} onBreak={onBreak} />
+      <Registry capabilities={capabilities} granted={granted} onApprove={onApprove} onRevoke={onRevoke} onBreak={onBreak} />
     </div>
   );
 }
@@ -88,7 +89,7 @@ function Totals({ runs }: { runs: Run[] }) {
   );
 }
 
-function Registry({ capabilities, granted, onApprove, onBreak }: Omit<Props, "runs">) {
+function Registry({ capabilities, granted, onApprove, onRevoke, onBreak }: Omit<Props, "runs">) {
   const [apps, setApps] = useState<App[]>([]);
   useEffect(() => { api<App[]>("/api/apps").then(setApps).catch(() => {}); }, [capabilities.length]);
   const appLabel = (pkg?: string) => apps.find(a => a.package === pkg)?.label || pkg?.split(".").pop() || "app";
@@ -129,13 +130,15 @@ function Registry({ capabilities, granted, onApprove, onBreak }: Omit<Props, "ru
               <span>{c.tests?.total ? (c.tests.passed === c.tests.total ? "Test passed" : "Test failed") : "Not tested, it would change something"}</span>
               <span>{c.steps} steps</span>
               <span>{repaired ? `Version ${c.version}, repaired after an app change` : `Version ${c.version}`}</span>
-              {asks && <span className="text-dawn">Asks before acting: it sends, pays or deletes</span>}
+              {asks && <span className="text-dawn">{c.approved ? "Runs without asking: you chose Always allow" : "Asks you before every run: it sends, pays or deletes"}</span>}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
               <code className="font-mono text-xs text-muted">{c.name}({c.params.join(", ")})</code>
               {needsApproval
-                ? <button type="button" onClick={() => onApprove(c.name)} className="rounded-lg bg-dawn px-3 py-1.5 text-sm font-semibold text-night">Approve</button>
+                ? <button type="button" onClick={() => onApprove(c.name)} className="rounded-lg border border-dawn px-3 py-1.5 text-sm font-semibold text-dawn hover:bg-dawn/10">Always allow</button>
+                : c.approved
+                ? <button type="button" onClick={() => onRevoke(c.name)} className="rounded-lg border border-thread px-3 py-1.5 text-sm text-thread hover:bg-thread hover:text-night" title="Take the right back: it asks again before every run">Revoke</button>
                 : <button type="button" onClick={() => onBreak(c.name)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:text-flesh" title="Pretend the app changed, to watch Stitch repair itself">Simulate app update</button>}
             </div>
           </article>
@@ -146,7 +149,7 @@ function Registry({ capabilities, granted, onApprove, onBreak }: Omit<Props, "ru
 }
 
 function Status({ needsApproval, approved }: { needsApproval: boolean; approved: boolean }) {
-  const [label, tone] = needsApproval ? ["Needs your approval", "border-thread/60 text-thread"] : approved ? ["Approved", "border-dawn/60 text-dawn"] : ["Ready", "border-ok/60 text-ok"];
+  const [label, tone] = needsApproval ? ["Asks first", "border-thread/60 text-thread"] : approved ? ["Always allowed", "border-dawn/60 text-dawn"] : ["Ready", "border-ok/60 text-ok"];
   return <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs whitespace-nowrap ${tone}`}>{label}</span>;
 }
 

@@ -5,9 +5,10 @@ import { compile } from './compiler.mjs';
 import { run } from './runner.mjs';
 import { review, GRANTED } from './policy.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { titleFrom } from './registry.mjs';
 import { latestFrame } from './stream.mjs';
 
-const FRAME_KINDS = new Set(['explore', 'run', 'held', 'done', 'broken', 'blocked', 'test']);
+const FRAME_KINDS = new Set(['explore', 'run', 'held', 'done', 'broken', 'blocked', 'test', 'ask']);
 
 const HISTORY = 'runs/history.json';
 
@@ -119,12 +120,23 @@ export class Agent {
   }
 
   async useExisting({ cap, params }, task, meter, emit) {
+    let allowOnce = false;
     if (cap.status === 'held') {
-      emit('blocked', { text: `${cap.name} is held: ${cap.statusReason}. A person has to approve it.` });
-      return { path: 'held', ok: false, capability: cap.name };
+      const decision = await this.askPermission(cap, params, emit);
+      if (decision === 'deny') {
+        emit('blocked', { text: `Not allowed, so ${cap.title || cap.name} did not run. Nothing was sent.` });
+        return { path: 'held', ok: false, capability: cap.name };
+      }
+      if (decision === 'always') {
+        await this.approve(cap.name);
+        emit('step', { kind: 'run', text: `Always allowed: ${cap.title || cap.name} will run without asking from now on` });
+      } else {
+        allowOnce = true;
+        emit('step', { kind: 'run', text: 'Allowed once: it will ask again next time' });
+      }
     }
     emit('use', { text: `Running ${cap.name} v${cap.version} as code with ${JSON.stringify(params)}` });
-    const res = await run(cap, params, { emit, allowExternal: cap.approved === true });
+    const res = await run(cap, params, { emit, allowExternal: allowOnce || cap.approved === true });
     if (res.ok) {
       cap.runs = (cap.runs || 0) + 1;
       await this.registry.save(cap);
@@ -155,7 +167,11 @@ export class Agent {
     const spec = await compile({ task, ...explored, meter, emit });
     if (explored.held) {
       const cap = await this.install(spec, null, 'learned, stopped before an external action', { passed: 0, total: 0 });
-      return { path: 'held', ok: false, capability: `${cap.name} v${cap.version}` };
+      // The capability is written but held. Ask now, and if allowed, finish the request with it as code.
+      const hit = this.registry.match(task);
+      if (hit?.cap.name !== cap.name) return { path: 'held', ok: false, capability: `${cap.name} v${cap.version}` };
+      const done = await this.useExisting(hit, task, meter, emit);
+      return { ...done, path: done.ok ? 'learned' : done.path };
     }
     const cap = await this.testAndInstall(spec, meter, emit, null, `learned from "${task}"`);
     return { path: 'learned', ok: cap.status === 'installed', capability: `${cap.name} v${cap.version}`, data: explored.data };
@@ -204,12 +220,51 @@ export class Agent {
     return this.busy;
   }
 
+  // Before anything that sends, pays or deletes, ask the person, the way Claude Code asks before a risky tool.
+  // "once" runs it this time only, "always" approves this one capability for good, "deny" or no answer stops.
+  // Authority only grows when a person grants it, and only for the capability they saw.
+  async askPermission(cap, params, emit) {
+    const values = Object.entries(params || {}).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(', ');
+    this.decision = null;
+    const title = cap.title || titleFrom(cap.name);
+    this.pending = { capability: cap.name, title, app: cap.manifest?.app, params, action: `${title}${values ? ` (${values})` : ''}` };
+    emit('ask', { text: `Allow Stitch to ${this.pending.action}? It sends, posts, pays or deletes.`, ask: this.pending });
+    const until = Date.now() + 5 * 60 * 1000;
+    try {
+      while (!this.decision && Date.now() < until) {
+        if (this.stopRequested) emit('wait'); // throws StoppedError
+        await new Promise(r => setTimeout(r, 150));
+      }
+      return this.decision || 'deny';
+    } finally {
+      this.pending = null;
+      this.decision = null;
+    }
+  }
+
+  decide(decision) {
+    if (!this.pending || !['once', 'always', 'deny'].includes(decision)) return false;
+    this.decision = decision;
+    return true;
+  }
+
   async approve(name) {
     const cap = this.registry.get(name);
     if (!cap) throw new Error(`No capability ${name}`);
     cap.status = 'installed';
     cap.approved = true;
     cap.statusReason = 'approved by a person';
+    await this.registry.save(cap);
+    this.emit('registry', { capabilities: this.registry.summary() });
+  }
+
+  // Take back an "always allow": the capability asks again before every run.
+  async revoke(name) {
+    const cap = this.registry.get(name);
+    if (!cap) throw new Error(`No capability ${name}`);
+    cap.status = 'held';
+    cap.approved = false;
+    cap.statusReason = 'it sends, posts, pays or deletes; permission revoked by a person';
     await this.registry.save(cap);
     this.emit('registry', { capabilities: this.registry.summary() });
   }
@@ -228,6 +283,6 @@ export class Agent {
   }
 
   state() {
-    return { session: this.session, busy: this.busy, current: this.current, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
+    return { session: this.session, busy: this.busy, current: this.current, pending: this.pending || null, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
   }
 }

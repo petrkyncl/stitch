@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ENGINE, money, secs, type Run, type RunEvent } from "@/lib/engine";
+import { ENGINE, money, secs, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
+import { AppIcon } from "./app-picker";
 
 type Turn = { kind: "run"; run: Run; live: boolean } | { kind: "session"; session: number; at: number; capabilities: number };
 
@@ -9,7 +10,7 @@ const OUTCOME: Record<string, { label: string; tone: string }> = {
   learned: { label: "Learned a new capability", tone: "text-dawn border-dawn/60" },
   code: { label: "Ran an installed capability as code", tone: "text-ok border-ok/60" },
   repaired: { label: "Repaired and installed a new version", tone: "text-dawn border-dawn/60" },
-  held: { label: "Held for a person's approval", tone: "text-thread border-thread/60" },
+  held: { label: "Not done without your permission", tone: "text-thread border-thread/60" },
   failed: { label: "Did not finish", tone: "text-thread border-thread/60" },
   stopped: { label: "Stopped by you", tone: "text-muted border-line" },
   working: { label: "Working", tone: "text-flesh border-line" },
@@ -17,10 +18,12 @@ const OUTCOME: Record<string, { label: string; tone: string }> = {
 
 const DOT: Record<string, string> = {
   explore: "bg-muted", run: "bg-ok", gap: "bg-dawn", compile: "bg-dawn", test: "bg-flesh", install: "bg-ok", done: "bg-ok",
-  route: "bg-ok", use: "bg-ok", broken: "bg-dawn", blocked: "bg-thread", held: "bg-thread", error: "bg-thread", stopped: "bg-muted",
+  route: "bg-ok", use: "bg-ok", broken: "bg-dawn", blocked: "bg-thread", held: "bg-thread", error: "bg-thread", stopped: "bg-muted", ask: "bg-dawn",
 };
 
-export function Chat({ runs, live, sessions, now }: { runs: Run[]; live: Run | null; sessions: { session: number; at: number; capabilities: number }[]; now: number }) {
+type Ask = { pending: Pending | null; onDecide: (d: Decision) => void };
+
+export function Chat({ runs, live, sessions, now, pending, onDecide }: { runs: Run[]; live: Run | null; sessions: { session: number; at: number; capabilities: number }[]; now: number } & Ask) {
   const end = useRef<HTMLDivElement>(null);
   const turns: Turn[] = [
     ...runs.map(r => ({ kind: "run" as const, run: r, live: false })),
@@ -29,7 +32,7 @@ export function Chat({ runs, live, sessions, now }: { runs: Run[]; live: Run | n
   ].sort((a, b) => (a.kind === "run" ? a.run.at : a.at) - (b.kind === "run" ? b.run.at : b.at));
 
   const liveCount = live?.events.length ?? 0;
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [turns.length, liveCount]);
+  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [turns.length, liveCount, pending]);
 
   if (!turns.length) {
     return (
@@ -46,7 +49,7 @@ export function Chat({ runs, live, sessions, now }: { runs: Run[]; live: Run | n
     <div className="flex flex-col gap-6 px-1 py-2">
       {turns.map(t => t.kind === "session"
         ? <SessionMark key={`s${t.session}`} session={t.session} capabilities={t.capabilities} />
-        : <Exchange key={t.run.id} run={t.run} live={t.live} now={now} />)}
+        : <Exchange key={t.run.id} run={t.run} live={t.live} now={now} ask={t.live ? { pending, onDecide } : undefined} />)}
       <div ref={end} />
     </div>
   );
@@ -62,8 +65,9 @@ function SessionMark({ session, capabilities }: { session: number; capabilities:
   );
 }
 
-function Exchange({ run, live, now }: { run: Run; live: boolean; now: number }) {
-  const outcome = OUTCOME[live ? "working" : run.path || "failed"];
+function Exchange({ run, live, now, ask }: { run: Run; live: boolean; now: number; ask?: Ask }) {
+  const waiting = live && ask?.pending;
+  const outcome = waiting ? { label: "Waiting for you", tone: "text-dawn border-dawn/60" } : OUTCOME[live ? "working" : run.path || "failed"];
   const elapsed = live ? now - run.at : run.ms;
   const proof = [...run.events].reverse().find(e => e.type === "done" || (e.type === "test" && /passed/i.test(e.text || "")));
   return (
@@ -92,6 +96,7 @@ function Exchange({ run, live, now }: { run: Run; live: boolean; now: number }) 
         {run.data && run.data.length > 0 && <DataTable rows={run.data} name={run.task} />}
         <Filmstrip events={run.events} live={live} />
         <Steps events={run.events} open={live} />
+        {waiting && ask?.pending && <Permission pending={ask.pending} onDecide={ask.onDecide} />}
       </div>
     </div>
   );
@@ -208,6 +213,42 @@ function DataTable({ rows, name }: { rows: Record<string, string>[]; name: strin
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// The agent stops before anything that sends, pays or deletes and asks, like Claude Code before a risky tool.
+// Its authority grows only here, by a person's choice, and only for this one capability.
+function Permission({ pending, onDecide }: { pending: Pending; onDecide: (d: Decision) => void }) {
+  const [sent, setSent] = useState<Decision | null>(null);
+  const decide = (d: Decision) => { setSent(d); onDecide(d); };
+  const values = Object.entries(pending.params || {});
+  return (
+    <div role="alertdialog" aria-label="Permission request" className="flex flex-col gap-4 rounded-2xl border-2 border-dawn bg-night p-5">
+      <div className="flex items-start gap-3">
+        {pending.app && <AppIcon pkg={pending.app} label={pending.title} size={44} />}
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="font-mono text-xs tracking-wider text-dawn uppercase">Permission needed</span>
+          <p className="text-xl font-semibold">Allow Stitch to {pending.title.charAt(0).toLowerCase() + pending.title.slice(1)}?</p>
+          <p className="text-muted">This sends, posts, pays or deletes, so it cannot be taken back. Stitch started without this right.</p>
+        </div>
+      </div>
+      {values.length > 0 && (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-xl bg-night-2 px-4 py-3">
+          {values.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="font-mono text-sm text-muted">{k.replace(/_/g, " ")}</dt>
+              <dd className="break-words">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={!!sent} onClick={() => decide("once")} className="rounded-xl bg-dawn px-5 py-2.5 text-lg font-semibold text-night disabled:opacity-50">Allow once</button>
+        <button type="button" disabled={!!sent} onClick={() => decide("always")} className="rounded-xl border border-dawn px-5 py-2.5 text-lg font-semibold text-dawn hover:bg-dawn/10 disabled:opacity-50">Always allow</button>
+        <button type="button" disabled={!!sent} onClick={() => decide("deny")} className="rounded-xl border border-line px-5 py-2.5 text-lg text-muted hover:text-flesh disabled:opacity-50">Deny</button>
+      </div>
+      <p className="font-mono text-xs text-muted">Always allow applies to {pending.capability} only. You can revoke it from its card.</p>
     </div>
   );
 }
