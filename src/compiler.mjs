@@ -109,6 +109,9 @@ function shape(raw) {
 }
 
 export async function compile({ task, trace, expect, meter, emit, previous }) {
+  // A find at the very end, or one that looks for the success text, only checked the result during exploration.
+  // The final check already does that, so it is not part of the program (it would scroll the list on every run).
+  trace = trace.filter((s, i) => !(s.op === 'find' && (i === trace.length - 1 || (expect && fold(padTimes(s.text)) === fold(padTimes(expect))))));
   const steps = trace.map((s, i) => ({ i, ...s }));
   let feedback = '';
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -175,12 +178,14 @@ export function validate(spec, task, trace, expect) {
     // Label templates only make sense on steps that touch an element.
     for (const k of Object.keys(spec.targets || {})) if (!['tap', 'long_press'].includes(trace[Number(k)]?.op)) delete spec.targets[k];
     trace.forEach((s, i) => {
-      if (i === 0 || spec.drop.has(i)) return;
+      if (i === 0 || (spec.drop.has(i) && !KEEP.has(s.op))) return; // kept steps are checked even when marked for dropping
       const target = spec.targets?.[String(i)] && (autofix(spec.targets[String(i)], got, s.label || '', true) || spec.targets[String(i)]);
       if (target) spec.targets[String(i)] = target;
       if (target) {
-        const want = fold(padTimes(render(target, got)));
-        if (!want || !fold(s.label).includes(want)) problems.push(`target for step ${i} renders "${render(target, got)}" but the tapped element was "${s.label}"`);
+        // Spaces do not count: "@{{contact}}" with "petr kyncl" has to match the handle "@petrkyncl".
+        const squash = x => fold(x).replace(/\s+/g, '');
+        const want = squash(padTimes(render(target, got)));
+        if (!want || !squash(s.label).includes(want)) problems.push(`target for step ${i} renders "${render(target, got)}" but the tapped element was "${s.label}"`);
         return;
       }
       if ((s.op === 'tap' || s.op === 'long_press') && values.some(v => new RegExp(`(^|\\D)0*${String(v).replace(/^0+(?=\d)/, '')}(\\D|$)`).test(s.sel?.labelHas || s.label || ''))) {
@@ -198,6 +203,9 @@ export function validate(spec, task, trace, expect) {
       if (t === undefined) problems.push(`missing typed template for step ${i}`);
       else if (fold(padTimes(render(t, got))) !== fold(padTimes(s.text))) problems.push(`step ${i} renders "${render(t, got)}" but the trace typed "${s.text}"`);
     });
+    // A param no step uses is a request the program ignores, e.g. a message it never types.
+    const used = JSON.stringify([spec.typed, spec.targets, spec.expect]);
+    for (const p of params) if (!used.includes(`{{${p}`)) problems.push(`param "${p}" is not used by any step; type it, target it, or remove it`);
     if (expect && spec.expect) {
       const fixed = autofix(spec.expect, got, expect, true);
       if (fixed) spec.expect = fixed;

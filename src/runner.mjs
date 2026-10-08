@@ -113,7 +113,8 @@ export async function run(cap, params, { emit, allowExternal = false }) {
   }
   if (!cap.expect) return { ok: true, irreversible };
   const want = padTimes(render(cap.expect, params));
-  for (let i = 0; i < 6; i++) {
+  // The screen has already settled, so two looks are enough before searching the list.
+  for (let i = 0; i < 2; i++) {
     const screen = await phone.observe(pkg);
     if (screenHasText(screen.nodes, want)) return { ok: true, verified: want };
     await phone.sleep(300);

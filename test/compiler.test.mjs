@@ -54,10 +54,20 @@ test('validate flags a tap that depends on the input', () => {
 });
 
 test('a param the request never gave can come from its default', () => {
-  const trace = [{ op: 'launch', pkg: 'com.whatsapp' }, { op: 'type', sel: { resourceId: 'w:id/entry' }, text: 'Hi!' }];
+  const trace = [{ op: 'launch', pkg: 'com.whatsapp' }, { op: 'find', text: 'Petr Kyncl' }, { op: 'type', sel: { resourceId: 'w:id/entry' }, text: 'Hi!' }];
   const spec = shape({
     name: 'whatsapp.send_message', params: [{ name: 'contact' }, { name: 'message', default: 'Hi!' }],
-    patterns: ['send a greeting to {{contact}} on whatsapp'], typed: { 1: '{{message}}' }, test: { contact: 'Petr', message: 'Hey' },
+    patterns: ['send a greeting to {{contact}} on whatsapp'], typed: { 1: '{{contact}}', 2: '{{message}}' }, test: { contact: 'Petr', message: 'Hey' },
   });
   assert.deepEqual(validate(spec, 'Send a greeting to Petr Kyncl on WhatsApp', trace, ''), []);
+});
+
+test('a param no step uses is rejected, and a handle matches its name without spaces', () => {
+  const trace = [{ op: 'launch', pkg: 'com.whatsapp' }, { op: 'tap', sel: { resourceId: 'w:id/row' }, label: '@petrkyncl' }];
+  const spec = shape({
+    name: 'whatsapp.send_message', params: [{ name: 'contact' }, { name: 'message' }],
+    patterns: ['message (?<contact>.+) saying (?<message>.+)'], targets: { 1: '@{{contact}}' }, test: { contact: 'Jan', message: 'Hey' },
+  });
+  const problems = validate(spec, 'message petr kyncl saying hi', trace, '');
+  assert.deepEqual(problems, ['param "message" is not used by any step; type it, target it, or remove it']);
 });

@@ -34,6 +34,8 @@ To reach an item in a long list use "find" instead of scrolling yourself.
 After typing a search, use enter to run it; suggestions under a search box are not results.
 When the request asks for data from a list (e.g. "get 20 pizza places with rating"), open the full results list, then use extract once;
 extract finishes the task. Use the number the request asks for as limit (default 20).
+Use extract ONLY when the request asks for data, a list, a table or several items. A request to find, open or show
+one thing (e.g. "find coffee in Google Maps") is done when its results are on screen: answer done, never extract.
 Add "why" with a few words. Use only ids from the current screen. Prefer typing into inputs over tapping digits or spinners.
 To write into an input use "type" directly: it focuses the input by itself, so never tap an input first.
 If an action did not change the screen, do something different instead of repeating it.
