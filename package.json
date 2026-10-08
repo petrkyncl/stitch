@@ -1,0 +1,10 @@
+{
+  "name": "stitch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A phone agent that builds, tests and installs its own Android capabilities.",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.mjs"
+  }
+}
