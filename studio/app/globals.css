@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* Stitch studio: one night-dark world. Thread red marks agent actions, dawn amber marks learning, green marks code runs. */
+@theme {
+  --color-night: #130e12;
+  --color-night-2: #1c151b;
+  --color-night-3: #251c24;
+  --color-line: #3a2c36;
+  --color-flesh: #efe4dd;
+  --color-muted: #a8969f;
+  --color-thread: #d23a55;
+  --color-dawn: #f3a64a;
+  --color-ok: #7fc8a0;
+
+  --font-display: var(--font-big-shoulders), "Arial Narrow", Impact, sans-serif;
+  --font-sans: var(--font-instrument), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, Menlo, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-night);
+  color: var(--color-flesh);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-dawn);
+  outline-offset: 2px;
+}
