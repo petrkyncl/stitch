@@ -30,6 +30,7 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       await phone.launch(s.pkg);
       pkg = s.pkg;
       justLaunched = true;
+      await phone.settle(pkg, 3000);
       continue;
     }
     if (s.op === 'global' || s.op === 'back') {
@@ -55,7 +56,7 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       // Enter goes to whatever field has focus, which is the one the previous step typed into.
       say('press enter');
       await phone.pressEnter();
-      await phone.sleep(400);
+      await phone.settle(pkg);
       continue;
     }
     if (s.op === 'scroll' && !s.sel) {
@@ -75,7 +76,7 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       say(`tap "${sel.labelHas || s.label}"`);
       await phone.tap(node);
       if (s.external) irreversible = true;
-      await phone.sleep(400);
+      await phone.settle(pkg);
     } else if (s.op === 'long_press') {
       say(`long press "${sel.labelHas || s.label}"`);
       await phone.nodeAction(node, 'long_click');
@@ -84,6 +85,13 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       const text = render(s.text, params);
       say(`type "${text}" into "${s.sel.labelHas || s.label || "the field"}"`);
       await phone.typeInto(node, text);
+      // Check the field took it; a field that was still animating in gets one more try.
+      const again = await waitFor(sel, pkg, 800);
+      if (again && !padTimes(phone.label(again)).toLowerCase().includes(padTimes(text).toLowerCase())) {
+        await phone.settle(pkg);
+        const fresh = await waitFor(sel, pkg, 1500);
+        if (fresh) await phone.typeInto(fresh, text);
+      }
     } else if (s.op === 'enter') {
       say(`enter on "${s.sel.labelHas}"`);
       await phone.pressEnter();

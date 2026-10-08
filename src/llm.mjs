@@ -62,17 +62,32 @@ async function askOnce(meter, system, user) {
   };
   if (IS_OPENAI) body.response_format = { type: 'json_object' };
   if (IS_OPENAI && REASONING) body.reasoning_effort = REASONING;
-  const res = await fetch(`${BASE}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(KEY ? { Authorization: `Bearer ${KEY}` } : {}) },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Model ${res.status}: ${data?.error?.message || 'request failed'}`);
+  const data = await post(body);
   const text = data.choices?.[0]?.message?.content || '';
   if (/failed to authenticate|oauth session expired/i.test(text)) throw new Error(`Model provider: ${text}`);
   meter.add(data.usage, system + user, text);
   return extractJSON(text);
+}
+
+// A model call that never answers would freeze the agent (and its Stop button); give up after 45 s and retry once.
+async function post(body) {
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${BASE}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(KEY ? { Authorization: `Bearer ${KEY}` } : {}) },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(45000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(`Model ${res.status}: ${data?.error?.message || 'request failed'}`);
+      return data;
+    } catch (e) {
+      lastErr = e.name === 'TimeoutError' ? new Error('The model did not answer within 45 s') : e;
+    }
+  }
+  throw lastErr;
 }
 
 // Forced tool call: the model must answer through one function with a JSON schema. Far stricter than "reply with JSON".
@@ -85,13 +100,7 @@ export async function askTool(meter, system, user, tool) {
     tool_choice: { type: 'function', function: { name: tool.name } },
   };
   if (IS_OPENAI && REASONING) body.reasoning_effort = REASONING;
-  const res = await fetch(`${BASE}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(KEY ? { Authorization: `Bearer ${KEY}` } : {}) },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Model ${res.status}: ${data?.error?.message || 'request failed'}`);
+  const data = await post(body);
   const msg = data.choices?.[0]?.message || {};
   const args = msg.tool_calls?.[0]?.function?.arguments;
   meter.add(data.usage, system + user, args || msg.content || '');

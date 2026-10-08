@@ -183,8 +183,9 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         }
         say(`tap ${nameOf(node)}`);
         await phone.tap(node);
+        await phone.settle(current);
         trace.push(step);
-        history.push(`tapped ${nameOf(node)}`);
+        history.push(node.editable ? `focused ${nameOf(node)}; now use type on it` : `tapped ${nameOf(node)}`);
         await phone.sleep(500);
         break;
       }
@@ -199,6 +200,9 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         const text = String(d.text ?? '');
         say(`type "${text}" into ${nameOf(node)}`);
         const via = await phone.typeInto(node, text);
+        // A tap that only focused this same input is not a step of its own; "type" focuses by itself.
+        const prev = trace[trace.length - 1];
+        if (prev?.op === 'tap' && node.editable && prev.sel?.resourceId && prev.sel.resourceId === node.resourceId) trace.pop();
         trace.push({ op: 'type', sel: selectorFor(node, '', screen.nodes), text, label: phone.label(node) });
         history.push(`typed "${text}" into ${nameOf(node)} (${via})`);
         await phone.sleep(250);

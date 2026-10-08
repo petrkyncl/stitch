@@ -11,6 +11,8 @@ const FILTERS = {
 };
 
 // Apps print times with a leading zero; people and models often don't. Compare and search times padded.
+const fold = s => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
 export const padTimes = s => String(s).replace(/(^|[^\d])(\d):(\d{2})(?!\d)/g, '$10$2:$3');
 
 export function render(template, params) {
@@ -177,8 +179,8 @@ export function validate(spec, task, trace, expect) {
       const target = spec.targets?.[String(i)] && (autofix(spec.targets[String(i)], got, s.label || '', true) || spec.targets[String(i)]);
       if (target) spec.targets[String(i)] = target;
       if (target) {
-        const want = padTimes(render(target, got)).toLowerCase();
-        if (!want || !String(s.label || '').toLowerCase().includes(want)) problems.push(`target for step ${i} renders "${render(target, got)}" but the tapped element was "${s.label}"`);
+        const want = fold(padTimes(render(target, got)));
+        if (!want || !fold(s.label).includes(want)) problems.push(`target for step ${i} renders "${render(target, got)}" but the tapped element was "${s.label}"`);
         return;
       }
       if ((s.op === 'tap' || s.op === 'long_press') && values.some(v => new RegExp(`(^|\\D)0*${String(v).replace(/^0+(?=\d)/, '')}(\\D|$)`).test(s.sel?.labelHas || s.label || ''))) {
@@ -186,9 +188,15 @@ export function validate(spec, task, trace, expect) {
       }
       if (s.op !== 'type' && s.op !== 'find' && s.op !== 'extract') return;
       let t = spec.typed?.[String(i)];
+      // No template given: if the text is a value from the request, point it at that param; else keep it literal.
+      if (t === undefined) {
+        const p = Object.entries(got).find(([, v]) => fold(v) && fold(v) === fold(s.text));
+        t = p ? `{{${p[0]}}}` : s.text;
+        spec.typed[String(i)] = t;
+      }
       if (t !== undefined) { const fixed = autofix(t, got, s.text); if (fixed) { t = fixed; spec.typed[String(i)] = fixed; } }
       if (t === undefined) problems.push(`missing typed template for step ${i}`);
-      else if (padTimes(render(t, got)) !== padTimes(s.text)) problems.push(`step ${i} renders "${render(t, got)}" but the trace typed "${s.text}"`);
+      else if (fold(padTimes(render(t, got))) !== fold(padTimes(s.text))) problems.push(`step ${i} renders "${render(t, got)}" but the trace typed "${s.text}"`);
     });
     if (expect && spec.expect) {
       const fixed = autofix(spec.expect, got, expect, true);

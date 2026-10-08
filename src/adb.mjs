@@ -317,6 +317,10 @@ export async function launchableApps() {
 
 // Fresh start of an app's launcher activity, so every run begins from the same screen.
 export async function launch(pkg) {
+  return launchFresh(pkg);
+}
+
+async function launchPlain(pkg) {
   await adb(['shell', 'cmd', 'statusbar', 'collapse']).catch(() => {}); // an open notification shade would hide the app
   const out = await adb(['shell', 'cmd', 'package', 'resolve-activity', '--brief', '-c', 'android.intent.category.LAUNCHER', pkg]);
   const comp = out.trim().split('\n').pop().trim();
@@ -373,9 +377,11 @@ export async function deviceInfo() {
 
 // Scroll the current list until a text is visible: back to the top first, then down page by page.
 // Stops when the screen no longer changes (end of the list). Returns the matching node or null.
+const fold = s => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
 export async function findText(text, pkg = '') {
-  const want = String(text).toLowerCase();
-  const visible = nodes => nodes.find(n => label(n).toLowerCase().includes(want) && n.cy > 150);
+  const want = fold(text);
+  const visible = nodes => nodes.find(n => fold(label(n)).includes(want) && n.cy > 150);
   const print = nodes => nodes.map(n => `${n.resourceId}|${label(n)}`).join('\n');
   let screen = await observe(pkg);
   let hit = visible(screen.nodes);
@@ -395,4 +401,26 @@ export async function findText(text, pkg = '') {
     }
   }
   return null;
+}
+
+// Wait until the screen stops changing (two identical reads in a row), so the next action does not land mid-animation.
+export async function settle(pkg = '', maxMs = 2000) {
+  const print = nodes => nodes.map(n => `${n.resourceId}|${label(n)}|${n.bounds.join(',')}`).join('\n');
+  let last = '';
+  const until = Date.now() + maxMs;
+  while (Date.now() < until) {
+    const now = print((await observe(pkg)).nodes);
+    if (now === last) return;
+    last = now;
+    await sleep(120);
+  }
+}
+
+// Fresh start that also clears the app's back stack, so it opens on its default screen, not where it was left.
+export async function launchFresh(pkg) {
+  await adb(['shell', 'cmd', 'statusbar', 'collapse']).catch(() => {});
+  const out = await adb(['shell', 'cmd', 'package', 'resolve-activity', '--brief', '-c', 'android.intent.category.LAUNCHER', pkg]);
+  const comp = out.trim().split('\n').pop().trim();
+  if (!comp.includes('/')) throw new Error(`No launcher activity for ${pkg}`);
+  await adb(['shell', 'am', 'start', '-S', '-W', '-f', '0x10008000', '-n', comp]); // NEW_TASK | CLEAR_TASK
 }

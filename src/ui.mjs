@@ -1,6 +1,9 @@
 // Turning raw UI nodes into something a model can read, and selectors that survive between runs.
 import { label } from './adb.mjs';
 
+// Case and diacritics do not matter when matching what a person typed against the screen: "kyncl" finds "Kynčl".
+export const fold = s => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
 // Only nodes a person could read or touch.
 export function visible(nodes) {
   return nodes.filter(n => n.clickable || n.editable || n.scrollable || label(n) || n.resourceId);
@@ -49,7 +52,7 @@ function stableLabel(node) {
 }
 
 export function findBySelector(nodes, sel) {
-  const lc = s => String(s || '').toLowerCase();
+  const lc = fold;
   const matches = nodes.filter(n => {
     if (sel.resourceId && n.resourceId !== sel.resourceId) return false;
     if (sel.labelHas && !lc(label(n)).includes(lc(sel.labelHas))) return false;
@@ -61,8 +64,8 @@ export function findBySelector(nodes, sel) {
 }
 
 export function screenHasText(nodes, text) {
-  const t = String(text).toLowerCase();
-  return nodes.some(n => label(n).toLowerCase().includes(t));
+  const t = fold(text);
+  return nodes.some(n => fold(label(n)).includes(t));
 }
 
 // The model sometimes describes the proof instead of quoting it. Accept the whole text, a quoted part,
