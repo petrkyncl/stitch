@@ -68,40 +68,70 @@ const RULES = {
 
 const re = s => { try { return new RegExp(s, 'i'); } catch { return null; } };
 
-export function applyRules(rules, texts) {
+// Texts that repeat in most sample rows ("Sponsored", "Directions") are captions, not data.
+export function commonTexts(rows) {
+  if (rows.length < 2) return [];
+  const count = new Map();
+  for (const r of rows) for (const t of new Set(r)) count.set(t, (count.get(t) || 0) + 1);
+  return [...count].filter(([, n]) => n >= Math.max(2, Math.ceil(rows.length * 0.6))).map(([t]) => t);
+}
+
+export function cleanRow(rules, texts) {
+  const drop = new Set(rules.drop || []);
   const ignore = (rules.ignore || []).map(re).filter(Boolean);
-  const kept = texts.filter(t => !ignore.some(r => r.test(t)));
+  return texts.filter(t => !drop.has(t) && !ignore.some(r => r.test(t)));
+}
+
+const tidy = v => String(v).replace(/^[\s,;:·•|-]+|[\s,;:·•|-]+$/g, '');
+
+export function applyRules(rules, texts) {
+  // Ignore rules only decide what counts as "the n-th text"; regexes look at every non-caption text.
+  const kept = cleanRow(rules, texts);
+  const drop = new Set(rules.drop || []);
+  const all = texts.filter(t => !drop.has(t));
   const rec = {};
   for (const f of rules.fields) {
     if (f.regex) {
+      // Models often anchor a regex to the whole text; if that finds nothing, try it unanchored.
       const r = re(f.regex);
-      const hit = r && kept.map(t => t.match(r)).find(Boolean);
-      rec[f.name] = hit ? (hit[1] ?? hit[0]).trim() : '';
+      const loose = re(String(f.regex).replace(/^\^/, '').replace(/\$$/, ''));
+      const hit = (r && all.map(t => t.match(r)).find(Boolean)) || (loose && all.map(t => t.match(loose)).find(Boolean));
+      rec[f.name] = hit ? tidy(hit[1] ?? hit[0]) : '';
     } else {
-      rec[f.name] = kept[f.index ?? 0] ?? '';
+      rec[f.name] = tidy(kept[f.index ?? 0] ?? '');
     }
   }
   return rec;
 }
 
 export async function defineExtractor({ meter, task, fields, rows }) {
-  const sample = rows.slice(0, 4).map((t, i) => `Row ${i + 1}: ${JSON.stringify(t)}`).join('\n');
+  const drop = commonTexts(rows);
+  const view = rows.map(t => t.filter(x => !drop.includes(x)));
+  const sample = view.slice(0, 4).map((t, i) => `Row ${i + 1}: ${JSON.stringify(t)}`).join('\n');
   let feedback = '';
   for (let attempt = 0; attempt < 2; attempt++) {
     const rules = await askTool(meter,
       'You write extraction rules for rows of a list in an Android app. Each row is given as the list of its texts. '
       + 'Use regex for values with a recognizable shape (ratings, prices, distances, times) and index for plain names or titles. '
-      + 'Ignore texts that are labels of buttons or ads.',
+      + 'Rules must work for every row of this list, not only the samples: never put sample values (like a specific rating) into a regex. '
+      + 'index counts positions in the rows exactly as shown. Ignore texts that are labels of buttons or ads.',
       `Request, quoted: "${task}"\nFields wanted: ${fields?.length ? fields.join(', ') : 'whatever a person would want in a spreadsheet for this request'}\n\n${sample}${feedback}`,
       RULES);
     rules.fields = (rules.fields || []).filter(f => f.name);
+    rules.drop = drop;
     if (!rules.key || !rules.fields.some(f => f.name === rules.key)) rules.key = rules.fields[0]?.name;
     // Local check: every field must be filled in at least one sample row, the key in most of them.
     const recs = rows.slice(0, 4).map(t => applyRules(rules, t));
+    if (process.env.DEBUG_EXTRACT) console.error('extract rules', JSON.stringify(rules), JSON.stringify(recs));
+    // Two fields with the same value in a row usually means an index pointing at the wrong text.
+    const clash = recs.some(r => { const v = Object.values(r).filter(Boolean); return new Set(v).size < v.length; });
+    if (clash) { feedback = `\n\nYour rules ${JSON.stringify(rules)} gave two fields the same value in one row. Fix them.`; continue; }
     const empty = rules.fields.filter(f => !recs.some(r => r[f.name]));
     const keyed = recs.filter(r => r[rules.key]).length;
     if (rules.fields.length && !empty.length && keyed >= Math.ceil(recs.length / 2)) return rules;
-    feedback = `\n\nYour rules ${JSON.stringify(rules)} left these fields empty on every sample: ${empty.map(f => f.name).join(', ') || '(none)'}; key filled in ${keyed}/${recs.length} rows. Fix them.`;
+    feedback = `\n\nYour rules ${JSON.stringify(rules)} left these fields empty on every sample: ${empty.map(f => f.name).join(', ') || '(none)'}; key filled in ${keyed}/${recs.length} rows. `
+      + 'A regex is tested with String.match against each single text of the row, so it must match inside a text like "4,2 stars, 1172 ratings". '
+      + 'Write a new regex for each empty field.';
   }
   throw new Error('Could not write extraction rules that fill the requested fields');
 }
@@ -120,6 +150,8 @@ export async function collect({ rules, limit = 20, pkg, emit = () => {} }) {
       // Ads, image tiles and buttons in the list fill the name and nothing else; a real row fills more.
       const filled = Object.values(rec).filter(Boolean).length;
       if (!key || (rules.fields.length > 1 && filled < 2)) continue;
+      // A row cut off at the list edge can put e.g. a distance into the name; the key must not repeat another field.
+      if (Object.entries(rec).some(([k, v]) => k !== rules.key && v && v === rec[rules.key])) continue;
       const prev = seen.get(key);
       // A row cut off at the edge may be missing fields; keep the fuller version.
       if (!prev) { seen.set(key, rec); added++; } else if (Object.values(rec).filter(Boolean).length > Object.values(prev).filter(Boolean).length) seen.set(key, rec);

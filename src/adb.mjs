@@ -59,21 +59,30 @@ export function parseNodes(xml) {
 // Stitch Hands: accessibility service on the phone, reached through `adb forward`. ~20 ms per screen
 // instead of ~2.5 s for a uiautomator dump. Falls back to the dump when it is not running.
 const HANDS = 'http://127.0.0.1:7912';
+// Remembered for a few seconds only, so a phone that was unplugged and comes back is picked up again.
 let handsReady = null;
+let handsCheckedAt = 0;
 
 async function hands(path, body) {
-  const res = await fetch(HANDS + path, body ? { method: 'POST', body: JSON.stringify(body) } : {});
+  let res;
+  try {
+    res = await fetch(HANDS + path, body ? { method: 'POST', body: JSON.stringify(body) } : {});
+  } catch (e) {
+    handsReady = null; // connection gone: check again next time
+    throw e;
+  }
   const data = await res.json();
   if (data.ok === false) throw new Error(`hands ${path}: ${data.error}`);
   return data;
 }
 
 export async function handsAvailable() {
-  if (handsReady !== null) return handsReady;
+  if (handsReady === true || (handsReady === false && Date.now() - handsCheckedAt < 5000)) return handsReady;
+  handsCheckedAt = Date.now();
   try {
     await adb(['forward', 'tcp:7912', 'tcp:7912']);
-    await hands('/ping');
-    handsReady = true;
+    const res = await fetch(HANDS + '/ping', { signal: AbortSignal.timeout(2000) });
+    handsReady = (await res.json()).ok === true;
   } catch { handsReady = false; }
   return handsReady;
 }
