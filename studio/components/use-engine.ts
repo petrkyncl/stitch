@@ -22,7 +22,7 @@ export function useEngine() {
       setState(s);
       setOffline(false);
       // Rejoin a run that started before this page loaded.
-      if (s.current && !liveRef.current) { liveRef.current = { ...s.current }; setLive(liveRef.current); }
+      if (s.current && !liveRef.current) { liveRef.current = { ...EMPTY, ...s.current }; setLive(liveRef.current); }
       if (!s.current) { liveRef.current = null; setLive(null); }
     } catch {
       setOffline(true);

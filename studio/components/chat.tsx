@@ -81,9 +81,9 @@ function Exchange({ run, live, now }: { run: Run; live: boolean; now: number }) 
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat value={secs(elapsed)} label="time" />
-          <Stat value={String(run.calls)} label="model calls" accent={!live && run.calls === 0} />
+          <Stat value={String(run.calls ?? 0)} label="model calls" accent={!live && run.calls === 0} />
           <Stat value={money(run.cost)} label="cost" accent={!live && run.cost === 0} />
-          <Stat value={(run.tokensIn + run.tokensOut).toLocaleString()} label="tokens" />
+          <Stat value={((run.tokensIn ?? 0) + (run.tokensOut ?? 0)).toLocaleString()} label="tokens" />
         </div>
 
         {proof && <p className="text-ok">{proof.text}</p>}

@@ -87,5 +87,5 @@ export async function api<T = unknown>(path: string, body?: unknown): Promise<T>
   return data as T;
 }
 
-export const money = (v: number) => (v === 0 ? "$0" : v < 0.01 ? "$" + v.toFixed(4) : "$" + v.toFixed(3));
-export const secs = (ms: number) => (ms / 1000).toFixed(1) + " s";
+export const money = (v?: number) => (!v ? "$0" : v < 0.01 ? "$" + v.toFixed(4) : "$" + v.toFixed(3));
+export const secs = (ms?: number) => ((ms ?? 0) / 1000).toFixed(1) + " s";
