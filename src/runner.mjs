@@ -36,6 +36,10 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
       pkg = s.pkg;
       justLaunched = true;
       await phone.settle(pkg, 3000);
+      if (s.home?.length) {
+        const back = await phone.returnToTabs(pkg, s.home);
+        if (back.length) say(`back to the ${back.join(', ')} tab it was learned on`);
+      }
       continue;
     }
     if (s.op === 'global' || s.op === 'back') {

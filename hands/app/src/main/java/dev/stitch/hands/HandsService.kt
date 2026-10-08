@@ -159,6 +159,7 @@ class HandsService : AccessibilityService() {
                     .put("editable", n.isEditable)
                     .put("scrollable", n.isScrollable)
                     .put("checked", n.isChecked)
+                    .put("selected", n.isSelected)
                     .put("focused", n.isFocused)
                     .put("bounds", JSONArray(listOf(rect.left, rect.top, rect.right, rect.bottom)))
                 list.add(n)

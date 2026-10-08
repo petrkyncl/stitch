@@ -98,7 +98,7 @@ async function observeHands(pkg = '') {
         return {
           id: n.id, gen: d.gen, text: n.text, resourceId: n.rid, cls: n.cls, pkg: n.pkg, desc: n.desc,
           clickable: n.clickable, editable: n.editable || /EditText/.test(n.cls), scrollable: n.scrollable,
-          checked: n.checked, selected: false, focused: n.focused, bounds: n.bounds,
+          checked: n.checked, selected: !!n.selected, focused: n.focused, bounds: n.bounds,
           cx: Math.round((x1 + x2) / 2), cy: Math.round((y1 + y2) / 2),
         };
       });
@@ -174,6 +174,28 @@ export async function typeInto(node, text) {
   await sleep(200);
   await typeText(text);
   return 'adb';
+}
+
+// Some apps reopen on the last tab you used, even after a full restart (Samsung Clock opens on Timer if you left it
+// there). A capability remembers the tabs that were selected when it was learned and selects them again after opening.
+export async function selectedTabs(pkg) {
+  const { nodes } = await observe(pkg);
+  const tabs = nodes.filter(n => n.selected && !n.editable && label(n) && label(n).length <= 30 && !/^page \d+ of \d+$/i.test(label(n))).map(n => label(n));
+  return [...new Set(tabs)].slice(0, 3);
+}
+
+export async function returnToTabs(pkg, tabs) {
+  const tapped = [];
+  for (const tab of tabs) {
+    const { nodes } = await observe(pkg);
+    const same = nodes.filter(n => fold(label(n)) === fold(tab));
+    if (!same.length || same.some(n => n.selected)) continue;
+    const target = same.find(n => n.clickable) || same[0];
+    if (target.clickable) await tap(target); else await tapAt(target.cx, target.cy);
+    tapped.push(tab);
+    await settle(pkg, 1500);
+  }
+  return tapped;
 }
 
 // Show on the phone what the agent read and what it is about to touch: thin boxes around the elements, a bold one

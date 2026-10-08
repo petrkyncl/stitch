@@ -126,9 +126,11 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
   pkg = pkg || await pickApp(meter, task, known);
   emit('step', { kind: 'explore', text: `Opening ${pkg}` });
   await phone.launch(pkg);
-  await phone.sleep(700);
+  await phone.settle(pkg, 2500);
 
-  const trace = [{ op: 'launch', pkg }];
+  // The tabs selected now are the screen this capability starts from; runs select them again if the app opens elsewhere.
+  const home = await phone.selectedTabs(pkg).catch(() => []);
+  const trace = [{ op: 'launch', pkg, ...(home.length ? { home } : {}) }];
   const history = [];
   let extractFailures = 0;
   let current = pkg;
@@ -252,7 +254,9 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         say(`open ${target}`);
         await phone.launch(target);
         current = target;
-        trace.push({ op: 'launch', pkg: target });
+        await phone.settle(target, 2500);
+        const tabs = await phone.selectedTabs(target).catch(() => []);
+        trace.push({ op: 'launch', pkg: target, ...(tabs.length ? { home: tabs } : {}) });
         history.push(`opened ${d.pkg} (${target})`);
         await phone.sleep(700);
         break;
