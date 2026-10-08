@@ -220,7 +220,9 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         say(`find "${text}" in the list`);
         const hit = await phone.findText(text, current);
         trace.push({ op: 'find', text });
-        history.push(hit ? `found "${text}", it is now on screen` : `"${text}" is not anywhere in the list`);
+        // Name the row it found, so the next decision is a tap on it rather than another search.
+        const found = hit ? (phone.label(hit) || text).slice(0, 60) : '';
+        history.push(hit ? `found "${text}": it is on screen now as "${found}". Tap that element next, do not search for it again` : `"${text}" is not anywhere in the list, try the app's search field instead`);
         break;
       }
       case 'scroll':
