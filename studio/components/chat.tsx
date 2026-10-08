@@ -112,16 +112,23 @@ const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-dig
 // Which learned capability did the work, in words: its app icon, its title and version, the code name on hover.
 function Skill({ run, capabilities }: { run: Run; capabilities: Capability[] }) {
   if (!run.capability) return null;
-  const [name, v] = run.capability.split(" ");
-  const cap = capabilities.find(c => c.name === name);
-  const title = cap?.title || name.split(".").pop()!.replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
-  const version = (v || (cap ? `v${cap.version}` : "")).replace("v", "version ");
+  const parts = run.capability.split(" + ").map(part => {
+    const [name, v] = part.split(" ");
+    const cap = capabilities.find(c => c.name === name);
+    const title = cap?.title || name.split(".").pop()!.replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+    return { name, title, app: cap?.app, version: (v || (cap ? `v${cap.version}` : "")).replace("v", "version ") };
+  });
   return (
-    <span title={`Capability ${run.capability}`} className="flex items-center gap-1.5 text-sm text-muted">
+    <span title={`Capability ${run.capability}`} className="flex flex-wrap items-center gap-1.5 text-sm text-muted">
       <span aria-hidden>using</span>
-      {cap?.app && <AppIcon pkg={cap.app} label={title} size={18} />}
-      <span className="text-flesh">{title}</span>
-      {version && <span>· {version}</span>}
+      {parts.map((p, i) => (
+        <span key={p.name + i} className="flex items-center gap-1.5">
+          {i > 0 && <span aria-hidden>then</span>}
+          {p.app && <AppIcon pkg={p.app} label={p.title} size={18} />}
+          <span className="text-flesh">{p.title}</span>
+          {p.version && <span>· {p.version}</span>}
+        </span>
+      ))}
     </span>
   );
 }
@@ -241,38 +248,32 @@ function DataTable({ rows, name }: { rows: Record<string, string>[]; name: strin
   );
 }
 
-// The agent stops before anything that sends, pays or deletes and asks, like Claude Code before a risky tool.
+// The agent runs up to the step that sends, pays or deletes and asks there, like Claude Code before a risky tool.
 // Its authority grows only here, by a person's choice, and only for this one capability.
-function Permission({ pending, onDecide }: { pending: Pending; onDecide: (d: Decision) => void }) {
+export function Permission({ pending, onDecide }: { pending: Pending; onDecide: (d: Decision) => void }) {
   const [sent, setSent] = useState<Decision | null>(null);
   const decide = (d: Decision) => { setSent(d); onDecide(d); };
   const values = Object.entries(pending.params || {});
+  const action = pending.title.charAt(0).toLowerCase() + pending.title.slice(1);
   return (
-    <div role="alertdialog" aria-label="Permission request" className="flex flex-col gap-4 rounded-2xl border-2 border-dawn bg-night p-5">
-      <div className="flex items-start gap-3">
-        {pending.app && <AppIcon pkg={pending.app} label={pending.title} size={44} />}
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="font-mono text-xs tracking-wider text-dawn uppercase">Permission needed</span>
-          <p className="text-xl font-semibold">Allow Stitch to {pending.title.charAt(0).toLowerCase() + pending.title.slice(1)}?</p>
-          <p className="text-muted">This sends, posts, pays or deletes, so it cannot be taken back. Stitch started without this right.</p>
-        </div>
+    <div role="alertdialog" aria-label="Permission request" className="flex flex-col gap-3 rounded-xl border border-dawn/40 bg-night px-4 py-3">
+      <div className="flex items-center gap-2">
+        {pending.app && <AppIcon pkg={pending.app} label={pending.title} size={20} />}
+        <p>Allow Stitch to {action}{pending.step ? <span className="text-muted"> (tap &quot;{pending.step}&quot;)</span> : null}?</p>
       </div>
       {values.length > 0 && (
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-xl bg-night-2 px-4 py-3">
+        <div className="flex flex-wrap gap-1.5">
           {values.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="font-mono text-sm text-muted">{k.replace(/_/g, " ")}</dt>
-              <dd className="break-words">{v}</dd>
-            </div>
+            <span key={k} className="rounded-md bg-night-3 px-2 py-0.5 text-sm"><span className="text-muted">{k.replace(/_/g, " ")}</span> {v}</span>
           ))}
-        </dl>
+        </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={!!sent} onClick={() => decide("once")} className="rounded-xl bg-dawn px-5 py-2.5 text-lg font-semibold text-night disabled:opacity-50">Allow once</button>
-        <button type="button" disabled={!!sent} onClick={() => decide("always")} className="rounded-xl border border-dawn px-5 py-2.5 text-lg font-semibold text-dawn hover:bg-dawn/10 disabled:opacity-50">Always allow</button>
-        <button type="button" disabled={!!sent} onClick={() => decide("deny")} className="rounded-xl border border-line px-5 py-2.5 text-lg text-muted hover:text-flesh disabled:opacity-50">Deny</button>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" disabled={!!sent} onClick={() => decide("once")} className="rounded-lg bg-dawn px-3 py-1 text-sm font-medium text-night disabled:opacity-50">Allow once</button>
+        <button type="button" disabled={!!sent} onClick={() => decide("always")} title={`Applies to ${pending.capability} only; revoke it from its card`} className="rounded-lg px-3 py-1 text-sm text-flesh hover:bg-night-3 disabled:opacity-50">Always allow</button>
+        <button type="button" disabled={!!sent} onClick={() => decide("deny")} className="rounded-lg px-3 py-1 text-sm text-muted hover:bg-night-3 hover:text-flesh disabled:opacity-50">Deny</button>
+        <span className="ml-auto text-xs text-muted">cannot be undone</span>
       </div>
-      <p className="font-mono text-xs text-muted">Always allow applies to {pending.capability} only. You can revoke it from its card.</p>
     </div>
   );
 }

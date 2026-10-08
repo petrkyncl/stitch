@@ -1,11 +1,44 @@
 // The Frankenstein loop: find a capability or notice the gap, build it, test it, install it, reuse it, repair it.
-import { Meter, askJSON } from './llm.mjs';
+import { Meter, askJSON, askTool } from './llm.mjs';
 import { explore } from './explorer.mjs';
 import { compile } from './compiler.mjs';
 import { run } from './runner.mjs';
 import { review, GRANTED } from './policy.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { titleFrom } from './registry.mjs';
+import { globalAction } from './adb.mjs';
+
+// Phone buttons the agent has from the start. Requests for them run directly, with no model and nothing to learn.
+const BUILTINS = [
+  { re: /^(go|press|tap)?\s*(to\s+)?(the\s+)?home(\s+screen|\s+button)?\.?$/i, action: 'home' },
+  { re: /^(go|press|tap)?\s*back(\s+button)?\.?$/i, action: 'back' },
+  { re: /^(open|show|press)?\s*(the\s+)?recent(s| apps)?\.?$/i, action: 'recents' },
+  { re: /^(open|show|pull down)\s+(the\s+)?notifications?\.?$/i, action: 'notifications' },
+];
+
+const SPLIT = {
+  name: 'split',
+  description: 'The tasks in the request, in order.',
+  parameters: {
+    type: 'object',
+    properties: { tasks: { type: 'array', items: { type: 'string' }, description: 'e.g. ["Send Jan a WhatsApp message saying hi", "Go home"]' } },
+    required: ['tasks'],
+  },
+};
+
+// Several tasks in one request: it succeeds when every task did; it learned when any task learned.
+function combine(results, total) {
+  if (results.length === 1 && total === 1) return results[0];
+  const failed = results.find(r => !r.ok);
+  const path = failed ? failed.path : results.some(r => r.path === 'learned') ? 'learned' : results.some(r => r.path === 'repaired') ? 'repaired' : 'code';
+  return {
+    path,
+    ok: !failed && results.length === total,
+    capability: results.map(r => r.capability).filter(Boolean).join(' + ') || undefined,
+    data: [...results].reverse().find(r => r.data?.length)?.data,
+    error: failed?.error,
+  };
+}
 import { latestFrame } from './stream.mjs';
 
 const FRAME_KINDS = new Set(['explore', 'run', 'held', 'done', 'broken', 'blocked', 'test', 'ask']);
@@ -72,13 +105,16 @@ export class Agent {
     };
     emit('task', { task, session: this.session, id: record.id });
     try {
-      const found = await this.route(task, meter, emit, app);
-      if (found) {
-        Object.assign(record, await this.useExisting(found, task, meter, emit));
-      } else {
-        emit('gap', { text: 'No installed capability can do this. Building one.' });
-        Object.assign(record, await this.learn(task, meter, emit, app));
+      // "Do this and then that" becomes separate tasks, each one routed, run or learned on its own.
+      const tasks = await this.split(task, meter, emit);
+      const results = [];
+      for (const [i, one] of tasks.entries()) {
+        if (tasks.length > 1) emit('step', { kind: 'plan', text: `Task ${i + 1} of ${tasks.length}: ${one}` });
+        const res = await this.one(one, meter, emit, tasks.length === 1 ? app : undefined);
+        results.push(res);
+        if (!res.ok) break;
       }
+      Object.assign(record, combine(results, tasks.length));
     } catch (e) {
       if (e instanceof StoppedError) {
         Object.assign(record, { path: 'stopped', ok: false, error: 'Stopped by you' });
@@ -98,6 +134,34 @@ export class Agent {
       this.emit('registry', { capabilities: this.registry.summary() });
     }
     return record;
+  }
+
+  async one(task, meter, emit, app) {
+    const builtin = BUILTINS.find(b => b.re.test(task.trim()));
+    if (builtin) {
+      // Phone buttons are what Stitch starts with; nothing to learn.
+      emit('step', { kind: 'run', text: `press ${builtin.action}, a phone button Stitch already has` });
+      await globalAction(builtin.action);
+      emit('done', { text: `Done: pressed ${builtin.action}` });
+      return { path: 'code', ok: true };
+    }
+    const found = await this.route(task, meter, emit, app);
+    if (found) return this.useExisting(found, task, meter, emit);
+    emit('gap', { text: 'No installed capability can do this. Building one.' });
+    return this.learn(task, meter, emit, app);
+  }
+
+  // One small model call, only when the request has a connective like "and then".
+  async split(task, meter, emit) {
+    if (!/\b(and then|then|after that|afterwards|a pak|potom)\b/i.test(task)) return [task];
+    const out = await askTool(meter,
+      'Split a phone request into the separate tasks it asks for, in order. Keep the words of the request and make each task ' +
+      'complete on its own (repeat the app or person if needed). The text of a message is never split. A single task stays alone.',
+      `Request, quoted: "${task}"`, SPLIT);
+    const tasks = Array.isArray(out.tasks) ? out.tasks.map(String).map(t => t.trim()).filter(Boolean).slice(0, 5) : [];
+    if (tasks.length < 2) return [task];
+    emit('step', { kind: 'plan', text: `Split into ${tasks.length} tasks: ${tasks.map(t => `"${t}"`).join(', ')}` });
+    return tasks;
   }
 
   // Free first (patterns compiled into each capability), then one small model call.
@@ -120,23 +184,20 @@ export class Agent {
   }
 
   async useExisting({ cap, params }, task, meter, emit) {
-    let allowOnce = false;
-    if (cap.status === 'held') {
-      const decision = await this.askPermission(cap, params, emit);
-      if (decision === 'deny') {
-        emit('blocked', { text: `Not allowed, so ${cap.title || cap.name} did not run. Nothing was sent.` });
-        return { path: 'held', ok: false, capability: cap.name };
-      }
+    // It runs right up to the step that sends, pays or deletes, then asks, with the result of every step before
+    // it on screen. An "always" from an earlier run means it does not ask.
+    const confirm = async step => {
+      const decision = await this.askPermission(cap, params, emit, step);
       if (decision === 'always') {
         await this.approve(cap.name);
-        emit('step', { kind: 'run', text: `Always allowed: ${cap.title || cap.name} will run without asking from now on` });
-      } else {
-        allowOnce = true;
+        emit('step', { kind: 'run', text: `Always allowed: ${cap.title || titleFrom(cap.name)} will run without asking from now on` });
+      } else if (decision === 'once') {
         emit('step', { kind: 'run', text: 'Allowed once: it will ask again next time' });
       }
-    }
+      return decision !== 'deny';
+    };
     emit('use', { text: `Running ${cap.name} v${cap.version} as code with ${JSON.stringify(params)}` });
-    const res = await run(cap, params, { emit, allowExternal: allowOnce || cap.approved === true });
+    const res = await run(cap, params, { emit, allowExternal: cap.approved === true, confirm });
     if (res.ok) {
       cap.runs = (cap.runs || 0) + 1;
       await this.registry.save(cap);
@@ -144,8 +205,8 @@ export class Agent {
       return { path: 'code', ok: true, capability: `${cap.name} v${cap.version}`, data: res.data };
     }
     if (res.held) {
-      emit('blocked', { text: res.reason });
-      return { path: 'held', ok: false, capability: cap.name };
+      emit('blocked', { text: `Not allowed, so it stopped before ${res.reason.split(' was')[0]}. Nothing was sent; what it prepared is still on the phone.` });
+      return { path: 'held', ok: false, capability: `${cap.name} v${cap.version}` };
     }
     if (res.irreversible) {
       // Something that sends, pays or deletes already ran. Never retry or re-explore on top of it.
@@ -223,12 +284,12 @@ export class Agent {
   // Before anything that sends, pays or deletes, ask the person, the way Claude Code asks before a risky tool.
   // "once" runs it this time only, "always" approves this one capability for good, "deny" or no answer stops.
   // Authority only grows when a person grants it, and only for the capability they saw.
-  async askPermission(cap, params, emit) {
+  async askPermission(cap, params, emit, step) {
     const values = Object.entries(params || {}).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(', ');
     this.decision = null;
     const title = cap.title || titleFrom(cap.name);
-    this.pending = { capability: cap.name, title, app: cap.manifest?.app, params, action: `${title}${values ? ` (${values})` : ''}` };
-    emit('ask', { text: `Allow Stitch to ${this.pending.action}? It sends, posts, pays or deletes.`, ask: this.pending });
+    this.pending = { capability: cap.name, title, app: cap.manifest?.app, params, step: step?.label, action: `${title}${values ? ` (${values})` : ''}` };
+    emit('ask', { text: `Everything is ready. Tap "${step?.label || 'the last step'}" to ${this.pending.action}? It cannot be taken back.`, ask: this.pending });
     const until = Date.now() + 5 * 60 * 1000;
     try {
       while (!this.decision && Date.now() < until) {

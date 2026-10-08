@@ -78,7 +78,8 @@ export default function Studio() {
             <label htmlFor="task" className="sr-only">Ask the agent</label>
             <input id="task" value={task} onChange={e => { setTask(e.target.value); recall.current = -1; }} onKeyDown={onKey} autoComplete="off"
               placeholder={busy ? "Working on it. Esc stops." : "Ask the phone for something"}
-              className="min-w-0 bg-transparent px-1 py-1.5 text-base text-flesh outline-none placeholder:text-muted/70 focus-visible:outline-none" />
+              style={{ outline: "none" }} // the composer box shows focus, not the input inside it
+              className="min-w-0 bg-transparent px-1 py-1.5 text-base text-flesh placeholder:text-muted/70" />
             <div className="flex items-center gap-2">
               <AppPicker value={app} onChange={setApp} />
               <Examples onPick={setTask} />

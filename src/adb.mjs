@@ -178,7 +178,7 @@ export async function typeInto(node, text) {
 
 // Show on the phone what the agent read and what it is about to touch: thin boxes around the elements, a bold one
 // around the target. Drawn by Hands in an overlay that takes no touches; OVERLAY=0 turns it off.
-export async function highlight(nodes, target = null) {
+export async function highlight(nodes, target = null, ms = null) {
   if (process.env.OVERLAY === '0' || !(await handsAvailable())) return;
   const area = n => (n.bounds[2] - n.bounds[0]) * (n.bounds[3] - n.bounds[1]);
   const screenArea = Math.max(...nodes.map(area), 1);
@@ -186,7 +186,7 @@ export async function highlight(nodes, target = null) {
     .filter(n => n.bounds && area(n) > 0 && area(n) < screenArea * 0.5 && (n.clickable || n.editable || label(n)))
     .slice(0, 150)
     .map(n => n.bounds);
-  await hands('/overlay', { boxes, target: target?.bounds ?? null, ms: target ? 1600 : 1000 }).catch(() => {});
+  await hands('/overlay', { boxes, target: target?.bounds ?? null, ms: ms ?? (target ? 1600 : 1000) }).catch(() => {});
 }
 
 // Enter/Send/Search on the focused field, through the keyboard so the app's own action fires.

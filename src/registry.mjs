@@ -38,7 +38,9 @@ export class Registry {
       const params = matchPatterns(cap.patterns, task);
       if (params) {
         const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
-        return { cap, params: { ...defaults, ...params } };
+        // A request may quote its values ("saying \"hi\""); the quotes are not part of the message.
+        const clean = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v).trim().replace(/^["'\u201c\u201d]+|["'\u201c\u201d]+$/g, '').trim()]));
+        return { cap, params: { ...defaults, ...clean } };
       }
     }
     return null;

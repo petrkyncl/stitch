@@ -46,7 +46,7 @@ export type Capability = {
 };
 
 // An action that sends, pays or deletes, waiting for a person to allow it.
-export type Pending = { capability: string; title: string; app?: string; params: Record<string, string>; action: string };
+export type Pending = { capability: string; title: string; app?: string; params: Record<string, string>; action: string; step?: string };
 export type Decision = "once" | "always" | "deny";
 
 export type EngineState = {

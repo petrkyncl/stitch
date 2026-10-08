@@ -20,7 +20,9 @@ async function waitFor(sel, pkg, timeoutMs) {
   return null;
 }
 
-export async function run(cap, params, { emit, allowExternal = false }) {
+// `confirm(step)` is asked right before a step that sends, pays or deletes, with everything before it already
+// done on screen, so the person sees exactly what would go out. Without it such a step holds the run.
+export async function run(cap, params, { emit, allowExternal = false, confirm = null }) {
   let pkg = '';
   let justLaunched = false;
   let irreversible = false; // set once a step that sends, pays or deletes has run
@@ -76,7 +78,12 @@ export async function run(cap, params, { emit, allowExternal = false }) {
     await phone.highlight(seen, node);
 
     if (s.op === 'tap') {
-      if (s.external && !allowExternal) return { ok: false, held: true, step: i, reason: `"${s.label}" needs approval` };
+      if (s.external && !allowExternal) {
+        await phone.highlight([], node, 10 * 60 * 1000); // keep the button marked while the person decides
+        const allowed = confirm ? await confirm(s) : false;
+        await phone.highlight([], null, 1);
+        if (!allowed) return { ok: false, held: true, step: i, reason: `"${s.label}" was not allowed` };
+      }
       say(`tap "${sel.labelHas || s.label}"`);
       await phone.tap(node);
       if (s.external) irreversible = true;
