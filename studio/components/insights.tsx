@@ -1,4 +1,8 @@
-import { money, secs, type Capability, type EngineState, type Run } from "@/lib/engine";
+"use client";
+
+import { useEffect, useState } from "react";
+import { api, money, secs, type App, type Capability, type EngineState, type Run } from "@/lib/engine";
+import { AppIcon } from "./app-picker";
 
 type Props = {
   runs: Run[];
@@ -85,31 +89,65 @@ function Totals({ runs }: { runs: Run[] }) {
 }
 
 function Registry({ capabilities, granted, onApprove, onBreak }: Omit<Props, "runs">) {
+  const [apps, setApps] = useState<App[]>([]);
+  useEffect(() => { api<App[]>("/api/apps").then(setApps).catch(() => {}); }, [capabilities.length]);
+  const appLabel = (pkg?: string) => apps.find(a => a.package === pkg)?.label || pkg?.split(".").pop() || "app";
+
   return (
-    <Section title="Capabilities" note={granted ? `granted: ${granted.permissions.join(", ")} · effect ${granted.effects.join("/")}` : undefined}>
-      {!capabilities.length && <p className="text-muted">None yet. Stitch starts with only tap, type and read the screen.</p>}
-      {capabilities.map(c => (
-        <div key={c.name} className="flex flex-col gap-2 rounded-xl border border-line bg-night-2 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-mono text-base">{c.name}({c.params.join(", ")}) <span className="text-muted">v{c.version}</span></span>
-            <span className={`rounded-full border px-2.5 py-0.5 font-mono text-xs tracking-wider uppercase ${c.status === "held" ? "border-thread/60 text-thread" : "border-ok/60 text-ok"}`}>
-              {c.status === "held" ? "held for approval" : "installed"}
-            </span>
-          </div>
-          <p className="text-[15px] text-flesh/90">{c.description}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-muted">
-            <span>{c.steps} steps</span><span>effect {c.effect}</span><span>tests {c.tests?.passed ?? 0}/{c.tests?.total ?? 0}</span><span>runs {c.runs}</span>
-          </div>
-          {c.status === "held" && c.reason && <p className="font-mono text-xs text-thread">{c.reason}</p>}
-          <div className="flex gap-2">
-            {c.status === "held"
-              ? <button type="button" onClick={() => onApprove(c.name)} className="rounded-lg bg-dawn px-3 py-1.5 text-sm font-semibold text-night">Approve</button>
-              : <button type="button" onClick={() => onBreak(c.name)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:text-flesh">Simulate app update</button>}
-          </div>
-        </div>
-      ))}
+    <Section title="What it has learned" note={granted ? `started with: ${granted.permissions.join(", ").replace(/_/g, " ")}` : undefined}>
+      {!capabilities.length && <p className="text-muted">Nothing yet. Stitch starts able to read the screen, tap and type, nothing more.</p>}
+      {capabilities.map(c => {
+        const needsApproval = c.status === "held";
+        const asks = c.effect === "external";
+        const repaired = (c.history?.length ?? 1) > 1;
+        return (
+          <article key={c.name} className="flex flex-col gap-3 rounded-2xl border border-line bg-night-2 p-4">
+            <div className="flex items-start gap-3">
+              {c.app ? <AppIcon pkg={c.app} label={appLabel(c.app)} size={44} /> : <span className="size-11 rounded-xl bg-night-3" />}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <h3 className="text-lg leading-tight font-semibold">{c.title}</h3>
+                <span className="text-sm text-muted">in {appLabel(c.app)}</span>
+              </div>
+              <Status needsApproval={needsApproval} approved={c.approved} />
+            </div>
+
+            <p className="text-[15px] text-flesh/90">{c.description}</p>
+
+            {c.paramInfo.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted">You tell it</span>
+                {c.paramInfo.map(p => (
+                  <span key={p.name} title={p.description} className="rounded-full border border-line px-2.5 py-0.5 text-sm">
+                    {p.name.replace(/_/g, " ")}{p.example ? <span className="text-muted"> e.g. {p.example}</span> : null}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+              <span>Used {c.runs}×</span>
+              <span>{c.tests?.total ? (c.tests.passed === c.tests.total ? "Test passed" : "Test failed") : "Not tested, it would change something"}</span>
+              <span>{c.steps} steps</span>
+              <span>{repaired ? `Version ${c.version}, repaired after an app change` : `Version ${c.version}`}</span>
+              {asks && <span className="text-dawn">Asks before acting: it sends, pays or deletes</span>}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+              <code className="font-mono text-xs text-muted">{c.name}({c.params.join(", ")})</code>
+              {needsApproval
+                ? <button type="button" onClick={() => onApprove(c.name)} className="rounded-lg bg-dawn px-3 py-1.5 text-sm font-semibold text-night">Approve</button>
+                : <button type="button" onClick={() => onBreak(c.name)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:text-flesh" title="Pretend the app changed, to watch Stitch repair itself">Simulate app update</button>}
+            </div>
+          </article>
+        );
+      })}
     </Section>
   );
+}
+
+function Status({ needsApproval, approved }: { needsApproval: boolean; approved: boolean }) {
+  const [label, tone] = needsApproval ? ["Needs your approval", "border-thread/60 text-thread"] : approved ? ["Approved", "border-dawn/60 text-dawn"] : ["Ready", "border-ok/60 text-ok"];
+  return <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs whitespace-nowrap ${tone}`}>{label}</span>;
 }
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {

@@ -76,7 +76,8 @@ const TOOL = {
     type: 'object',
     properties: {
       name: { type: 'string', description: 'app.verb_object in lowercase, e.g. clock.set_alarm' },
-      description: { type: 'string' },
+      title: { type: 'string', description: 'What it does for a person, 2 to 4 words, e.g. "Set an alarm"' },
+      description: { type: 'string', description: 'One plain sentence for a non-programmer, no package names' },
       params: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, example: { type: 'string' }, default: { type: 'string', description: 'Value used when the request does not say it' } }, required: ['name', 'description', 'example'] } },
       patterns: { type: 'array', items: { type: 'string' } },
       drop_steps: { type: 'array', items: { type: 'integer' }, description: 'Indices of trace steps to leave out' },

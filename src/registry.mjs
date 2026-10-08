@@ -32,8 +32,9 @@ export class Registry {
   all() { return [...this.caps.values()]; }
 
   // Free routing: regex patterns written at compile time, no model call.
-  match(task) {
+  match(task, app) {
     for (const cap of this.caps.values()) {
+      if (app && cap.manifest?.app !== app) continue;
       const params = matchPatterns(cap.patterns, task);
       if (params) {
         const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
@@ -46,6 +47,10 @@ export class Registry {
   summary() {
     return this.all().map(c => ({
       name: c.name,
+      title: c.title || titleFrom(c.name),
+      app: c.manifest?.app,
+      approved: !!c.approved,
+      paramInfo: (c.params || []).map(p => ({ name: p.name, description: p.description, example: p.example, default: p.default })),
       version: c.version,
       description: c.description,
       params: c.params.map(p => p.name),
@@ -59,4 +64,10 @@ export class Registry {
       history: c.history,
     }));
   }
+}
+
+// "clock.set_alarm" -> "Set alarm", for capabilities learned before titles existed.
+function titleFrom(name) {
+  const verbObject = String(name).split('.').pop().replace(/_/g, ' ');
+  return verbObject.charAt(0).toUpperCase() + verbObject.slice(1);
 }

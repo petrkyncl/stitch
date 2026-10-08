@@ -46,3 +46,7 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 999px; border: 3px solid var(--color-night); }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+/* Tailwind's preflight leaves buttons with the default arrow; everything clickable gets the hand. */
+button:not(:disabled), [role="button"], summary, label[for], select { cursor: pointer; }
+button:disabled { cursor: not-allowed; }

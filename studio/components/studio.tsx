@@ -6,12 +6,19 @@ import { useEngine } from "./use-engine";
 import { Chat } from "./chat";
 import { PhonePanel } from "./phone-panel";
 import { Insights } from "./insights";
+import { AppPicker } from "./app-picker";
 
-const EXAMPLES = ["Set an alarm for 7:14", "Set an alarm for 6:30", "Wake me up at 5:45"];
+const EXAMPLES = [
+  "Set an alarm for 7:14",
+  "Find coffee in Google Maps",
+  "Get 10 pizza places from Google Maps with rating and distance",
+  "Send Petr Kyncl a WhatsApp message saying I am on my way",
+];
 
 export default function Studio() {
   const { state, live, device, offline, sessions, now, epoch, refresh } = useEngine();
   const [task, setTask] = useState("");
+  const [app, setApp] = useState<string | null>(null);
   const [error, setError] = useState("");
   const busy = state?.busy ?? false;
 
@@ -20,7 +27,7 @@ export default function Studio() {
     const text = task.trim();
     if (!text) return;
     setError("");
-    try { await api("/api/task", { task: text }); setTask(""); } catch (err) { setError((err as Error).message); }
+    try { await api("/api/task", { task: text, app: app ?? undefined }); setTask(""); } catch (err) { setError((err as Error).message); }
   }
   const stop = () => api("/api/stop", {}).catch(err => setError(err.message));
   // Esc stops the agent, like stopping a person mid-task.
@@ -67,6 +74,8 @@ export default function Studio() {
                 : <button type="submit" disabled={!task.trim()} className="rounded-xl bg-dawn px-6 text-lg font-semibold text-night disabled:opacity-40">Send</button>}
             </div>
             <div className="flex flex-wrap items-center gap-2 px-1">
+              <AppPicker value={app} onChange={setApp} />
+              <span className="mx-1 h-5 w-px bg-line" aria-hidden />
               {EXAMPLES.map(x => (
                 <button key={x} type="button" onClick={() => setTask(x)} className="rounded-full border border-line px-3 py-1 text-sm text-muted hover:text-flesh">{x}</button>
               ))}

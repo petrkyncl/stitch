@@ -1,5 +1,6 @@
 // Thin ADB bridge: read the UI tree, tap, type, launch apps, take screenshots.
 import { execFile } from 'node:child_process';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const ADB = process.env.ADB || 'adb';
 const SERIAL = process.env.ANDROID_SERIAL || '';
@@ -225,15 +226,36 @@ export async function scroll(direction = 'down') {
 
 // Installed apps with the names people see, from Hands; package names only when Hands is not running.
 let appsCache = { at: 0, list: null };
+const APPS_FILE = 'runs/apps.json';
 export async function installedApps() {
   if (appsCache.list && Date.now() - appsCache.at < 60000) return appsCache.list;
   let list;
   if (await handsAvailable()) {
-    try { list = (await hands('/apps')).apps; } catch { /* fall back */ }
+    try {
+      list = (await hands('/apps')).apps;
+      await mkdir('runs', { recursive: true });
+      await writeFile(APPS_FILE, JSON.stringify(list)); // so the studio's app picker works while the phone is away
+    } catch { /* fall back */ }
   }
-  if (!list) list = (await launchableApps()).map(p => ({ package: p, label: p }));
+  if (!list) list = await readFile(APPS_FILE, 'utf8').then(JSON.parse).catch(() => null);
+  if (!list) list = (await launchableApps().catch(() => [])).map(p => ({ package: p, label: p }));
   appsCache = { at: Date.now(), list };
   return list;
+}
+
+// Launcher icon of an app as PNG, cached on disk.
+export async function appIcon(pkg) {
+  if (!/^[\w.]+$/.test(pkg)) return null;
+  const file = `runs/icons/${pkg}.png`;
+  const cached = await readFile(file).catch(() => null);
+  if (cached) return cached;
+  if (!(await handsAvailable())) return null;
+  const res = await fetch(`${HANDS}/icon?pkg=${pkg}`).catch(() => null);
+  if (!res?.ok) return null;
+  const png = Buffer.from(await res.arrayBuffer());
+  await mkdir('runs/icons', { recursive: true });
+  await writeFile(file, png);
+  return png;
 }
 
 // Rank installed apps against a name the model wrote ("Clock", "Samsung Clock", "WhatsApp", "com.whatsapp").

@@ -3,7 +3,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { Registry } from './registry.mjs';
 import { Agent } from './agent.mjs';
-import { screenshot, handsAvailable, deviceInfo, tapAt, swipeAt, globalAction } from './adb.mjs';
+import { screenshot, handsAvailable, deviceInfo, tapAt, swipeAt, globalAction, installedApps, appIcon } from './adb.mjs';
 import { model, provider, hasCredentials } from './llm.mjs';
 import { serveStream } from './stream.mjs';
 
@@ -52,10 +52,10 @@ const server = http.createServer(async (req, res) => {
       return res.end(png);
     }
     if (req.method === 'POST' && url.pathname === '/api/task') {
-      const { task } = await body(req);
+      const { task, app } = await body(req);
       if (!task?.trim()) return json(res, 400, { error: 'Write a task first' });
       if (agent.busy) return json(res, 409, { error: 'Stitch is still working on the previous task' });
-      agent.handle(task.trim());
+      agent.handle(task.trim(), { app: typeof app === 'string' && /^[\w.]+$/.test(app) ? app : undefined });
       return json(res, 202, { ok: true });
     }
     const frame = url.pathname.match(/^\/api\/frame\/(\d+)\/(\d+)\.jpg$/);
@@ -64,6 +64,18 @@ const server = http.createServer(async (req, res) => {
       if (!jpg) return json(res, 404, { error: 'no frame' });
       res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' });
       return res.end(jpg);
+    }
+    if (url.pathname === '/api/apps') {
+      const apps = await installedApps();
+      // The person's own apps first, then preinstalled ones, each alphabetical.
+      return json(res, 200, [...apps].sort((a, b) => (a.system === b.system ? a.label.localeCompare(b.label) : a.system ? 1 : -1)));
+    }
+    const icon = url.pathname.match(/^\/api\/app-icon\/([\w.]+)$/);
+    if (icon) {
+      const png = await appIcon(icon[1]);
+      if (!png) return json(res, 404, { error: 'no icon' });
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+      return res.end(png);
     }
     if (url.pathname === '/api/device') return json(res, 200, await deviceInfo());
     if (req.method === 'POST' && url.pathname === '/api/input') {

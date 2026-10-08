@@ -46,11 +46,12 @@ export class Agent {
     this.emit('session', { session: this.session, capabilities: this.registry.all().length });
   }
 
-  async handle(task) {
+  // `app` (optional) is the package the person chose; it narrows routing and skips guessing the app.
+  async handle(task, { app } = {}) {
     if (this.busy) throw new Error('Stitch is already working on a task');
     this.busy = true;
     const meter = new Meter();
-    const record = { id: `${Date.now()}`, session: this.session, task, at: Date.now(), events: [] };
+    const record = { id: `${Date.now()}`, session: this.session, task, app, at: Date.now(), events: [] };
     this.current = record;
     let frames = 0;
     this.stopRequested = false;
@@ -70,12 +71,12 @@ export class Agent {
     };
     emit('task', { task, session: this.session, id: record.id });
     try {
-      const found = await this.route(task, meter, emit);
+      const found = await this.route(task, meter, emit, app);
       if (found) {
         Object.assign(record, await this.useExisting(found, task, meter, emit));
       } else {
         emit('gap', { text: 'No installed capability can do this. Building one.' });
-        Object.assign(record, await this.learn(task, meter, emit));
+        Object.assign(record, await this.learn(task, meter, emit, app));
       }
     } catch (e) {
       if (e instanceof StoppedError) {
@@ -99,13 +100,13 @@ export class Agent {
   }
 
   // Free first (patterns compiled into each capability), then one small model call.
-  async route(task, meter, emit) {
-    const hit = this.registry.match(task);
+  async route(task, meter, emit, app) {
+    const hit = this.registry.match(task, app);
     if (hit) {
       emit('route', { text: `Matched ${hit.cap.name} v${hit.cap.version} by pattern, no model call`, via: 'pattern' });
       return hit;
     }
-    const caps = this.registry.all();
+    const caps = this.registry.all().filter(c => !app || c.manifest?.app === app);
     if (!caps.length) return null;
     const out = await askJSON(meter,
       'Decide whether one of the installed capabilities can do the task. Return {"capability": "<name>" or null, "params": {...}}. Only choose a capability whose description really covers the task, and fill every param.',
@@ -147,9 +148,9 @@ export class Agent {
     return { path: 'repaired', ok: installed.status === 'installed', capability: `${installed.name} v${installed.version}`, data: explored.data };
   }
 
-  async learn(task, meter, emit) {
+  async learn(task, meter, emit, app) {
     const known = this.registry.all().map(c => ({ name: c.name, app: c.manifest?.app })).filter(k => k.app);
-    const explored = await explore({ task, meter, emit, known });
+    const explored = await explore({ task, meter, emit, known, pkg: app });
     emit('compile', { text: 'Writing the capability from what just worked' });
     const spec = await compile({ task, ...explored, meter, emit });
     if (explored.held) {

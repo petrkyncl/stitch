@@ -20,8 +20,17 @@ export type Run = MeterSnapshot & {
   data?: Record<string, string>[];
 };
 
+export type App = { package: string; label: string; system?: boolean };
+
+export const iconUrl = (pkg: string) => `${ENGINE}/api/app-icon/${pkg}`;
+
 export type Capability = {
   name: string;
+  title: string;
+  app?: string;
+  approved: boolean;
+  paramInfo: { name: string; description?: string; example?: string; default?: string }[];
+  history?: { version: number; reason: string; at: string }[];
   version: number;
   description: string;
   params: string[];

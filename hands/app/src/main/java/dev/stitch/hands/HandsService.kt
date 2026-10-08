@@ -71,9 +71,18 @@ class HandsService : AccessibilityService() {
         }
         val body = if (length > 0) runCatching { JSONObject(String(bodyChars, 0, read)) }.getOrDefault(JSONObject()) else JSONObject()
 
+        val out = s.getOutputStream()
+        if (path.startsWith("/icon")) {
+            val png = runCatching { icon(path.substringAfter("pkg=", "").substringBefore("&")) }.getOrNull()
+            val head = if (png != null) "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: ${png.size}\r\nConnection: close\r\n\r\n"
+                       else "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            out.write(head.toByteArray())
+            if (png != null) out.write(png)
+            out.flush()
+            return
+        }
         val result = runCatching { route(path, body) }.getOrElse { JSONObject().put("ok", false).put("error", it.message ?: it.javaClass.simpleName) }
         val bytes = result.toString().toByteArray(Charsets.UTF_8)
-        val out = s.getOutputStream()
         out.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
         out.write(bytes)
         out.flush()
@@ -163,6 +172,19 @@ class HandsService : AccessibilityService() {
         if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return JSONObject().put("ok", true).put("via", "action")
         val r = Rect().also { node.getBoundsInScreen(it) }
         return JSONObject().put("ok", tapAt(r.exactCenterX(), r.exactCenterY())).put("via", "gesture")
+    }
+
+    // The app's launcher icon as a 96 px PNG, for the studio's app picker.
+    private fun icon(pkg: String): ByteArray {
+        val drawable = packageManager.getApplicationIcon(pkg)
+        val size = 96
+        val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
+        val bytes = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bytes)
+        return bytes.toByteArray()
     }
 
     // Apps with a launcher icon, with the name a person sees under the icon.
