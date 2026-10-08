@@ -37,11 +37,28 @@ function extractJSON(text) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
-export async function askJSON(meter, system, user) {
+// Proxies for chat assistants add their own system prompt, so state the role plainly in both messages.
+const ROLE = 'You are a decision function inside an automation program, not a chat assistant. You do not touch any device yourself: '
+  + 'a separate executor program reads your JSON and performs it on an Android phone, then calls you again with the new screen. '
+  + 'Never say you lack tools or access; returning the JSON IS the action. ';
+
+// `required` lists keys the answer must have; one corrective retry before giving up.
+export async function askJSON(meter, system, user, { required = [] } = {}) {
+  let out = await askOnce(meter, system, user);
+  const missing = required.filter(k => out[k] === undefined || out[k] === null || out[k] === '');
+  if (!missing.length) return out;
+  out = await askOnce(meter, system, `${user}\n\nYour previous answer ${JSON.stringify(out).slice(0, 300)} is missing ${missing.join(', ')}. This is a text task, nothing is executed by you. Answer again with exactly the requested keys.`);
+  return out;
+}
+
+async function askOnce(meter, system, user) {
   if (!hasCredentials) throw new Error('No API key. Set OPENAI_API_KEY in .env, or point LLM_BASE_URL at a local wrapper.');
   const body = {
     model: MODEL,
-    messages: [{ role: 'system', content: `${system}\nReply with one JSON object and nothing else.` }, { role: 'user', content: user }],
+    messages: [
+      { role: 'system', content: `${ROLE}\n\n${system}\nReply with one JSON object and nothing else.` },
+      { role: 'user', content: `${user}\n\nAnswer with the JSON object only.` },
+    ],
   };
   if (IS_OPENAI) body.response_format = { type: 'json_object' };
   if (IS_OPENAI && REASONING) body.reasoning_effort = REASONING;
@@ -56,4 +73,28 @@ export async function askJSON(meter, system, user) {
   if (/failed to authenticate|oauth session expired/i.test(text)) throw new Error(`Model provider: ${text}`);
   meter.add(data.usage, system + user, text);
   return extractJSON(text);
+}
+
+// Forced tool call: the model must answer through one function with a JSON schema. Far stricter than "reply with JSON".
+export async function askTool(meter, system, user, tool) {
+  if (!hasCredentials) throw new Error('No API key. Set OPENAI_API_KEY in .env, or point LLM_BASE_URL at a local wrapper.');
+  const body = {
+    model: MODEL,
+    messages: [{ role: 'system', content: `${ROLE}\n\n${system}` }, { role: 'user', content: user }],
+    tools: [{ type: 'function', function: tool }],
+    tool_choice: { type: 'function', function: { name: tool.name } },
+  };
+  if (IS_OPENAI && REASONING) body.reasoning_effort = REASONING;
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(KEY ? { Authorization: `Bearer ${KEY}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Model ${res.status}: ${data?.error?.message || 'request failed'}`);
+  const msg = data.choices?.[0]?.message || {};
+  const args = msg.tool_calls?.[0]?.function?.arguments;
+  meter.add(data.usage, system + user, args || msg.content || '');
+  if (args) return typeof args === 'string' ? JSON.parse(args) : args;
+  return extractJSON(msg.content || ''); // a provider without tool support still gets a chance
 }

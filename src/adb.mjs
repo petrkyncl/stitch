@@ -77,10 +77,10 @@ export async function handsAvailable() {
   return handsReady;
 }
 
-async function observeHands() {
+async function observeHands(pkg = '') {
   for (let i = 0; i < 5; i++) {
     try {
-      const d = await hands('/tree');
+      const d = await hands('/tree' + (pkg ? `?pkg=${pkg}` : ''));
       const nodes = d.nodes.map(n => {
         const [x1, y1, x2, y2] = n.bounds;
         return {
@@ -99,8 +99,8 @@ async function observeHands() {
 }
 
 // One screen observation. uiautomator sometimes fails mid-animation, so retry.
-export async function observe() {
-  if (await handsAvailable()) return observeHands();
+export async function observe(pkg = '') {
+  if (await handsAvailable()) return observeHands(pkg);
   let lastErr;
   for (let i = 0; i < 4; i++) {
     try {
@@ -159,6 +159,24 @@ export async function clearField(node) {
   await adb(['shell', 'input', 'keyevent', '67']); // delete
 }
 
+// Whole-phone actions: back, home, recents, notifications, quick_settings, power_dialog, lock_screen, screenshot, split_screen.
+export async function globalAction(name) {
+  if (await handsAvailable()) return hands('/global', { action: name });
+  const codes = { back: '4', home: '3', recents: '187' };
+  if (codes[name]) return adb(['shell', 'input', 'keyevent', codes[name]]);
+  if (name === 'notifications') return adb(['shell', 'cmd', 'statusbar', 'expand-notifications']);
+  if (name === 'quick_settings') return adb(['shell', 'cmd', 'statusbar', 'expand-settings']);
+  throw new Error(`${name} needs Stitch Hands`);
+}
+
+// Accessibility action on a node: long_click, scroll_forward, scroll_backward, expand, collapse, dismiss, ime_enter.
+export async function nodeAction(node, action) {
+  if (node.gen !== undefined && await handsAvailable()) return hands('/node', { id: node.id, gen: node.gen, action });
+  if (action === 'ime_enter') return adb(['shell', 'input', 'keyevent', '66']);
+  if (action === 'long_click') return adb(['shell', 'input', 'swipe', String(node.cx), String(node.cy), String(node.cx), String(node.cy), '700']);
+  throw new Error(`${action} needs Stitch Hands`);
+}
+
 export async function key(name) {
   if ((name === 'back' || name === 'home') && await handsAvailable()) {
     try { await hands('/global', { action: name }); return; } catch { /* use keyevent */ }
@@ -184,6 +202,7 @@ export async function launchableApps() {
 
 // Fresh start of an app's launcher activity, so every run begins from the same screen.
 export async function launch(pkg) {
+  await adb(['shell', 'cmd', 'statusbar', 'collapse']).catch(() => {}); // an open notification shade would hide the app
   const out = await adb(['shell', 'cmd', 'package', 'resolve-activity', '--brief', '-c', 'android.intent.category.LAUNCHER', pkg]);
   const comp = out.trim().split('\n').pop().trim();
   if (!comp.includes('/')) throw new Error(`No launcher activity for ${pkg}`);

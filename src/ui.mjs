@@ -52,3 +52,12 @@ export function screenHasText(nodes, text) {
   const t = String(text).toLowerCase();
   return nodes.some(n => label(n).toLowerCase().includes(t));
 }
+
+// The model sometimes describes the proof instead of quoting it. Accept the whole text, a quoted part,
+// or a time/number token from it, as long as that exact piece is on screen. Returns the piece that matched.
+export function provenText(nodes, expect) {
+  const e = String(expect || '').trim();
+  if (!e) return null;
+  const pieces = [e, ...[...e.matchAll(/"([^"]{2,40})"/g)].map(m => m[1]), ...(e.match(/\b\d{1,2}:\d{2}\b/g) || [])];
+  return pieces.find(p => screenHasText(nodes, p)) || null;
+}

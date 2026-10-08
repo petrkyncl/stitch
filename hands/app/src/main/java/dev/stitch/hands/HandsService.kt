@@ -81,19 +81,30 @@ class HandsService : AccessibilityService() {
 
     private fun route(path: String, body: JSONObject): JSONObject = when (path.substringBefore("?")) {
         "/ping" -> JSONObject().put("ok", true)
-        "/tree" -> tree()
+        "/tree" -> tree(path.substringAfter("pkg=", "").substringBefore("&"))
         "/click" -> click(body)
         "/settext" -> setText(body)
         "/tap" -> JSONObject().put("ok", tapAt(body.getDouble("x").toFloat(), body.getDouble("y").toFloat()))
         "/swipe" -> JSONObject().put("ok", swipe(body))
-        "/global" -> JSONObject().put("ok", performGlobalAction(
-            when (body.optString("action")) { "home" -> GLOBAL_ACTION_HOME; "recents" -> GLOBAL_ACTION_RECENTS; else -> GLOBAL_ACTION_BACK }
-        ))
+        "/global" -> global(body.optString("action"))
+        "/node" -> nodeAction(body)
         else -> JSONObject().put("ok", false).put("error", "unknown path $path")
     }
 
-    private fun tree(): JSONObject {
-        val root = rootInActiveWindow ?: return JSONObject().put("ok", false).put("error", "no active window")
+    // The window of the requested app when it is on screen, otherwise the active window
+    // (an open notification shade or a dialog would otherwise hide the app behind it).
+    private fun rootFor(pkg: String): AccessibilityNodeInfo? {
+        if (pkg.isNotEmpty()) {
+            for (w in windows) {
+                val r = w.root ?: continue
+                if (r.packageName?.toString() == pkg) return r
+            }
+        }
+        return rootInActiveWindow
+    }
+
+    private fun tree(pkg: String): JSONObject {
+        val root = rootFor(pkg) ?: return JSONObject().put("ok", false).put("error", "no active window")
         val list = ArrayList<AccessibilityNodeInfo>(256)
         val arr = JSONArray()
         val rect = Rect()
@@ -138,6 +149,46 @@ class HandsService : AccessibilityService() {
         if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return JSONObject().put("ok", true).put("via", "action")
         val r = Rect().also { node.getBoundsInScreen(it) }
         return JSONObject().put("ok", tapAt(r.exactCenterX(), r.exactCenterY())).put("via", "gesture")
+    }
+
+    private fun global(name: String): JSONObject {
+        val action = when (name) {
+            "back" -> GLOBAL_ACTION_BACK
+            "home" -> GLOBAL_ACTION_HOME
+            "recents" -> GLOBAL_ACTION_RECENTS
+            "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
+            "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
+            "power_dialog" -> GLOBAL_ACTION_POWER_DIALOG
+            "lock_screen" -> GLOBAL_ACTION_LOCK_SCREEN
+            "screenshot" -> GLOBAL_ACTION_TAKE_SCREENSHOT
+            "split_screen" -> GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN
+            else -> return JSONObject().put("ok", false).put("error", "unknown global action $name")
+        }
+        return JSONObject().put("ok", performGlobalAction(action))
+    }
+
+    // Accessibility actions on a node, walking up to the nearest parent that supports the action.
+    private fun nodeAction(body: JSONObject): JSONObject {
+        val node = nodeFor(body)
+        val name = body.optString("action")
+        val action: Int = when (name) {
+            "click" -> AccessibilityNodeInfo.ACTION_CLICK
+            "long_click" -> AccessibilityNodeInfo.ACTION_LONG_CLICK
+            "scroll_forward" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            "scroll_backward" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            "focus" -> AccessibilityNodeInfo.ACTION_FOCUS
+            "expand" -> AccessibilityNodeInfo.ACTION_EXPAND
+            "collapse" -> AccessibilityNodeInfo.ACTION_COLLAPSE
+            "dismiss" -> AccessibilityNodeInfo.ACTION_DISMISS
+            "ime_enter" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
+            else -> return JSONObject().put("ok", false).put("error", "unknown node action $name")
+        }
+        var target: AccessibilityNodeInfo? = node
+        while (target != null) {
+            if (target.actionList.any { it.id == action } && target.performAction(action)) return JSONObject().put("ok", true)
+            target = target.parent
+        }
+        return JSONObject().put("ok", false).put("error", "no node in the chain supports $name")
     }
 
     private fun setText(body: JSONObject): JSONObject {

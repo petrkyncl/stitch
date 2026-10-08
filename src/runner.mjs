@@ -3,54 +3,75 @@ import * as phone from './adb.mjs';
 import { findBySelector, screenHasText } from './ui.mjs';
 import { render } from './compiler.mjs';
 
-async function waitFor(sel, obs) {
-  let screen = obs;
-  for (let i = 0; i < 4; i++) {
-    if (!screen) screen = await phone.observe();
+async function waitFor(sel, pkg) {
+  for (let i = 0; i < 6; i++) {
+    const screen = await phone.observe(pkg);
     const node = findBySelector(screen.nodes, sel);
-    if (node) return { node, screen };
-    screen = null;
-    await phone.sleep(250);
+    if (node) return node;
+    await phone.sleep(200);
   }
-  return { node: null, screen: null };
+  return null;
 }
 
 export async function run(cap, params, { emit, allowExternal = false }) {
-  let obs = null;
+  let pkg = '';
   for (let i = 0; i < cap.steps.length; i++) {
     const s = cap.steps[i];
+    const say = text => emit('step', { kind: 'run', text });
+
     if (s.op === 'launch') {
-      emit('step', { kind: 'run', text: `launch ${s.pkg}` });
+      say(`open ${s.pkg}`);
       await phone.launch(s.pkg);
+      pkg = s.pkg;
       await phone.sleep(400);
-      obs = null;
       continue;
     }
-    if (s.op === 'back') { await phone.key('back'); obs = null; await phone.sleep(350); continue; }
-    if (s.op === 'scroll') { await phone.scroll(s.direction); obs = null; await phone.sleep(350); continue; }
+    if (s.op === 'global' || s.op === 'back') {
+      const name = s.name || 'back';
+      say(`press ${name}`);
+      await phone.globalAction(name);
+      await phone.sleep(350);
+      continue;
+    }
+    if (s.op === 'scroll' && !s.sel) {
+      say(`scroll ${s.direction}`);
+      await phone.scroll(s.direction);
+      await phone.sleep(350);
+      continue;
+    }
 
-    const { node } = await waitFor(s.sel, obs);
+    const node = await waitFor(s.sel, pkg);
     if (!node) return { ok: false, step: i, reason: `element not found: ${s.sel.labelHas || s.sel.resourceId}` };
 
     if (s.op === 'tap') {
       if (s.external && !allowExternal) return { ok: false, held: true, step: i, reason: `"${s.label}" needs approval` };
-      emit('step', { kind: 'run', text: `tap "${s.sel.labelHas || s.label}"` });
+      say(`tap "${s.sel.labelHas || s.label}"`);
       await phone.tap(node);
-      obs = null;
-      await phone.sleep(450);
+      await phone.sleep(400);
+    } else if (s.op === 'long_press') {
+      say(`long press "${s.sel.labelHas || s.label}"`);
+      await phone.nodeAction(node, 'long_click');
+      await phone.sleep(500);
     } else if (s.op === 'type') {
       const text = render(s.text, params);
-      emit('step', { kind: 'run', text: `type "${text}" into "${s.sel.labelHas}"` });
+      say(`type "${text}" into "${s.sel.labelHas}"`);
       await phone.typeInto(node, text);
-      obs = null;
+    } else if (s.op === 'enter') {
+      say(`enter on "${s.sel.labelHas}"`);
+      await phone.nodeAction(node, 'ime_enter').catch(() => phone.key('enter'));
+      await phone.sleep(400);
+    } else if (s.op === 'scroll') {
+      say(`scroll ${s.direction}`);
+      await phone.nodeAction(node, s.direction === 'up' ? 'scroll_backward' : 'scroll_forward').catch(() => phone.scroll(s.direction));
+      await phone.sleep(350);
     }
   }
   if (!cap.expect) return { ok: true };
   const want = render(cap.expect, params);
-  for (let i = 0; i < 4; i++) {
-    const screen = await phone.observe();
+  for (let i = 0; i < 6; i++) {
+    const screen = await phone.observe(pkg);
     if (screenHasText(screen.nodes, want)) return { ok: true, verified: want };
-    await phone.sleep(400);
+    await phone.sleep(300);
   }
   return { ok: false, step: cap.steps.length, reason: `"${want}" is not on screen after the last step` };
 }
