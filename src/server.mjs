@@ -1,5 +1,6 @@
 // Stitch engine: holds the phone and the agent. Live event stream and task API for the studio UI.
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { Registry } from './registry.mjs';
 import { Agent } from './agent.mjs';
 import { screenshot, handsAvailable, deviceInfo, tapAt, swipeAt, globalAction } from './adb.mjs';
@@ -56,6 +57,13 @@ const server = http.createServer(async (req, res) => {
       if (agent.busy) return json(res, 409, { error: 'Stitch is still working on the previous task' });
       agent.handle(task.trim());
       return json(res, 202, { ok: true });
+    }
+    const frame = url.pathname.match(/^\/api\/frame\/(\d+)\/(\d+)\.jpg$/);
+    if (frame) {
+      const jpg = await readFile(`runs/frames/${frame[1]}/${frame[2]}.jpg`).catch(() => null);
+      if (!jpg) return json(res, 404, { error: 'no frame' });
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' });
+      return res.end(jpg);
     }
     if (url.pathname === '/api/device') return json(res, 200, await deviceInfo());
     if (req.method === 'POST' && url.pathname === '/api/input') {

@@ -3,18 +3,22 @@ import * as phone from './adb.mjs';
 import { findBySelector, screenHasText } from './ui.mjs';
 import { render } from './compiler.mjs';
 
-async function waitFor(sel, pkg) {
-  for (let i = 0; i < 6; i++) {
+// Poll the tree until the element shows up. Reading it costs ~20 ms, so waiting is cheap; apps that just
+// launched get longer.
+async function waitFor(sel, pkg, timeoutMs) {
+  const until = Date.now() + timeoutMs;
+  do {
     const screen = await phone.observe(pkg);
     const node = findBySelector(screen.nodes, sel);
     if (node) return node;
-    await phone.sleep(200);
-  }
+    await phone.sleep(150);
+  } while (Date.now() < until);
   return null;
 }
 
 export async function run(cap, params, { emit, allowExternal = false }) {
   let pkg = '';
+  let justLaunched = false;
   for (let i = 0; i < cap.steps.length; i++) {
     const s = cap.steps[i];
     const say = text => emit('step', { kind: 'run', text });
@@ -23,7 +27,7 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       say(`open ${s.pkg}`);
       await phone.launch(s.pkg);
       pkg = s.pkg;
-      await phone.sleep(400);
+      justLaunched = true;
       continue;
     }
     if (s.op === 'global' || s.op === 'back') {
@@ -33,6 +37,13 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       await phone.sleep(350);
       continue;
     }
+    if (s.op === 'enter') {
+      // Enter goes to whatever field has focus, which is the one the previous step typed into.
+      say('press enter');
+      await phone.pressEnter();
+      await phone.sleep(400);
+      continue;
+    }
     if (s.op === 'scroll' && !s.sel) {
       say(`scroll ${s.direction}`);
       await phone.scroll(s.direction);
@@ -40,7 +51,8 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       continue;
     }
 
-    const node = await waitFor(s.sel, pkg);
+    const node = await waitFor(s.sel, pkg, justLaunched ? 8000 : 4000);
+    justLaunched = false;
     if (!node) return { ok: false, step: i, reason: `element not found: ${s.sel.labelHas || s.sel.resourceId}` };
 
     if (s.op === 'tap') {
@@ -54,11 +66,11 @@ export async function run(cap, params, { emit, allowExternal = false }) {
       await phone.sleep(500);
     } else if (s.op === 'type') {
       const text = render(s.text, params);
-      say(`type "${text}" into "${s.sel.labelHas}"`);
+      say(`type "${text}" into "${s.sel.labelHas || s.label || "the field"}"`);
       await phone.typeInto(node, text);
     } else if (s.op === 'enter') {
       say(`enter on "${s.sel.labelHas}"`);
-      await phone.nodeAction(node, 'ime_enter').catch(() => phone.key('enter'));
+      await phone.pressEnter();
       await phone.sleep(400);
     } else if (s.op === 'scroll') {
       say(`scroll ${s.direction}`);

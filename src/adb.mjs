@@ -127,24 +127,51 @@ export async function tap(node) {
   await adb(['shell', 'input', 'tap', String(node.cx), String(node.cy)]);
 }
 
-// Put text into a field. Accessibility SET_TEXT first; some widgets (Samsung's number picker) ignore it,
-// so check the tree and fall back to tapping the field and typing on the keyboard.
+// Put text into a field the way a person does: focus it, then type on the Stitch keyboard (an IME inside Hands).
+// Falls back to accessibility SET_TEXT, then to adb key events, and checks the tree after each attempt.
+const HUMAN_TYPING = process.env.HUMAN_TYPING === '1';
+
+async function fieldShows(node, text) {
+  const after = await observeHands();
+  const same = after.nodes.find(n => n.resourceId === node.resourceId && Math.abs(n.cy - node.cy) < 40 && Math.abs(n.cx - node.cx) < 40)
+    || after.nodes.find(n => n.focused && n.editable);
+  return !!same && label(same).includes(String(text));
+}
+
 export async function typeInto(node, text) {
   if (node.gen !== undefined && await handsAvailable()) {
     try {
-      await hands('/settext', { id: node.id, gen: node.gen, text: String(text) });
-      const after = await observeHands();
-      const same = after.nodes.find(n => n.resourceId === node.resourceId && Math.abs(n.cy - node.cy) < 20 && Math.abs(n.cx - node.cx) < 20);
-      if (same && label(same).includes(String(text))) return 'settext';
+      await tap(node);
+      for (let i = 0; i < 10; i++) {
+        const ime = await hands('/ime');
+        if (ime.ready) break;
+        await sleep(80);
+      }
+      await hands('/ime/type', { text: String(text), replace: true, human: HUMAN_TYPING });
+      await sleep(120);
+      if (await fieldShows(node, text)) return 'keyboard';
+    } catch { /* keyboard not active or no focus */ }
+    try {
+      const fresh = await observeHands();
+      const again = fresh.nodes.find(n => n.resourceId === node.resourceId && Math.abs(n.cy - node.cy) < 40) || node;
+      await hands('/settext', { id: again.id, gen: again.gen, text: String(text) });
+      if (await fieldShows(node, text)) return 'settext';
     } catch { /* fall through */ }
   }
   await tap(node);
   await sleep(200);
   await typeText(text);
-  return 'keyboard';
+  return 'adb';
 }
 
-// `input text` treats spaces and shell characters specially.
+// Enter/Send/Search on the focused field, through the keyboard so the app's own action fires.
+export async function pressEnter() {
+  if (await handsAvailable()) {
+    try { await hands('/ime/enter'); return; } catch { /* no keyboard */ }
+  }
+  await adb(['shell', 'input', 'keyevent', '66']);
+}
+
 export async function typeText(text) {
   const safe = String(text)
     .replace(/[^\x20-\x7E]/g, '')

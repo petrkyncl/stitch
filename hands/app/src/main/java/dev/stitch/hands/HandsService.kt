@@ -88,6 +88,19 @@ class HandsService : AccessibilityService() {
         "/swipe" -> JSONObject().put("ok", swipe(body))
         "/global" -> global(body.optString("action"))
         "/node" -> nodeAction(body)
+        "/ime" -> {
+            val kb = StitchKeyboard.instance
+            JSONObject().put("ok", true).put("installed", kb != null).put("ready", kb?.ready == true)
+        }
+        "/ime/type" -> {
+            val kb = StitchKeyboard.instance ?: error("Stitch keyboard is not the active keyboard")
+            if (!kb.ready) error("no input field is focused")
+            JSONObject().put("ok", kb.type(body.optString("text"), body.optBoolean("replace", true), body.optBoolean("human", false)))
+        }
+        "/ime/enter" -> {
+            val kb = StitchKeyboard.instance ?: error("Stitch keyboard is not the active keyboard")
+            JSONObject().put("ok", kb.enter())
+        }
         else -> JSONObject().put("ok", false).put("error", "unknown path $path")
     }
 

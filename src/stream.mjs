@@ -46,11 +46,11 @@ async function start() {
     }
     await adb(['forward', `tcp:${LOCAL_PORT}`, `localabstract:scrcpy_${SCID}`]);
     const server = spawn(ADB, adbArgs(['shell', 'CLASSPATH=/data/local/tmp/stitch-scrcpy.jar', 'app_process', '/', 'com.genymobile.scrcpy.Server', SERVER_VERSION,
-      `scid=${SCID}`, 'tunnel_forward=true', 'audio=false', 'control=false', 'raw_stream=true', 'max_size=720', 'video_bit_rate=8000000', 'max_fps=30', 'cleanup=false']),
+      `scid=${SCID}`, 'tunnel_forward=true', 'audio=false', 'control=false', 'raw_stream=true', 'max_size=0', 'video_bit_rate=20000000', 'max_fps=30', 'cleanup=false']),
     { stdio: 'ignore' });
     await sleep(600);
     const sock = await connect();
-    const ff = spawn(FFMPEG, ['-loglevel', 'error', '-f', 'h264', '-i', 'pipe:0', '-f', 'mjpeg', '-q:v', '5', 'pipe:1'], { stdio: ['pipe', 'pipe', 'ignore'] });
+    const ff = spawn(FFMPEG, ['-loglevel', 'error', '-f', 'h264', '-i', 'pipe:0', '-f', 'mjpeg', '-q:v', '3', 'pipe:1'], { stdio: ['pipe', 'pipe', 'ignore'] });
     sock.pipe(ff.stdin);
     ff.stdin.on('error', () => {});
     sock.on('error', () => {});
@@ -99,6 +99,9 @@ function send(res, frame) {
   res.write(frame);
   res.write('\r\n');
 }
+
+// The newest decoded frame, or null when nobody is watching (the stream only runs for viewers).
+export const latestFrame = () => lastFrame;
 
 export function serveStream(req, res) {
   res.writeHead(200, {

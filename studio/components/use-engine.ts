@@ -56,7 +56,7 @@ export function useEngine() {
           refresh();
           break;
         default:
-          update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, at: ev.at }] }));
+          update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, frame: ev.frame, at: ev.at }] }));
       }
     };
     return () => es.close();

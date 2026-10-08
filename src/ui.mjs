@@ -21,6 +21,8 @@ export function compact(nodes) {
 
 // A selector describes a node by what stays stable: its resource id and a fragment of its label.
 export function selectorFor(node, hint = '') {
+  // An input's label is whatever is typed in it, so it says nothing stable; its resource id does.
+  if (node.editable && node.resourceId) return { resourceId: node.resourceId, labelHas: hint, cls: node.cls };
   return {
     resourceId: node.resourceId || '',
     labelHas: hint || stableLabel(node),

@@ -5,7 +5,7 @@ export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number
 
 export type RunPath = "learned" | "code" | "repaired" | "held" | "failed";
 
-export type RunEvent = { type: string; kind?: string; text?: string; why?: string; at: number };
+export type RunEvent = { type: string; kind?: string; text?: string; why?: string; frame?: string; at: number };
 
 export type Run = MeterSnapshot & {
   id: string;
@@ -67,6 +67,7 @@ export type EngineEvent = {
   id?: string;
   text?: string;
   why?: string;
+  frame?: string;
   kind?: string;
   task?: string;
   session?: number;

@@ -5,6 +5,9 @@ import { compile } from './compiler.mjs';
 import { run } from './runner.mjs';
 import { review, GRANTED } from './policy.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { latestFrame } from './stream.mjs';
+
+const FRAME_KINDS = new Set(['explore', 'run', 'held', 'done', 'broken', 'blocked', 'test']);
 
 const HISTORY = 'runs/history.json';
 
@@ -45,9 +48,18 @@ export class Agent {
     const meter = new Meter();
     const record = { id: `${Date.now()}`, session: this.session, task, at: Date.now(), events: [] };
     this.current = record;
+    let frames = 0;
     const emit = (type, data = {}) => {
-      if (type !== 'task') record.events.push({ type, kind: data.kind, text: data.text, why: data.why, at: Date.now() });
-      this.emit(type, { ...data, runId: record.id, meter: meter.snapshot() });
+      // Keep what the phone showed at this step, straight from the live video, so the chat can replay the run.
+      let frame;
+      const jpg = latestFrame();
+      if (jpg && FRAME_KINDS.has(data.kind || type)) {
+        const n = frames++;
+        frame = `/api/frame/${record.id}/${n}.jpg`;
+        mkdir(`runs/frames/${record.id}`, { recursive: true }).then(() => writeFile(`runs/frames/${record.id}/${n}.jpg`, jpg)).catch(() => {});
+      }
+      if (type !== 'task') record.events.push({ type, kind: data.kind, text: data.text, why: data.why, frame, at: Date.now() });
+      this.emit(type, { ...data, frame, runId: record.id, meter: meter.snapshot() });
     };
     emit('task', { task, session: this.session, id: record.id });
     try {

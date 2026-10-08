@@ -1,11 +1,10 @@
 "use client";
 
-import { useRef, useState, type PointerEvent } from "react";
+import { useRef, type PointerEvent } from "react";
 import { api, ENGINE, type Device } from "@/lib/engine";
 
 // Live phone video you can drive with the mouse: click = tap, drag = swipe.
 export function PhonePanel({ device }: { device: Device | null }) {
-  const [live, setLive] = useState(true);
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   const w = device?.width || 1080;
   const h = device?.height || 2340;
@@ -40,11 +39,9 @@ export function PhonePanel({ device }: { device: Device | null }) {
           style={{ aspectRatio: `${w} / ${h}` }}
           title="Click to tap, drag to swipe"
         >
-          {live
-            // An MJPEG stream; next/image cannot optimize or proxy a never-ending response.
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={`${ENGINE}/api/stream.mjpg`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
-            : <div className="grid size-full place-items-center text-muted">Live screen is off</div>}
+          {/* An MJPEG stream; next/image cannot optimize or proxy a never-ending response. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`${ENGINE}/api/stream.mjpg`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
@@ -52,9 +49,6 @@ export function PhonePanel({ device }: { device: Device | null }) {
         <NavButton label="Home" onClick={() => press("home")} d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" />
         <NavButton label="Recent apps" onClick={() => press("recents")} d="M5 5h14v14H5z" />
         <NavButton label="Notifications" onClick={() => press("notifications")} d="M6 17h12l-2-3v-4a4 4 0 00-8 0v4zM10 20h4" />
-        <label className="ml-2 flex items-center gap-2 text-sm text-muted">
-          <input type="checkbox" checked={live} onChange={e => setLive(e.target.checked)} className="size-4 accent-dawn" /> Live
-        </label>
       </div>
     </div>
   );

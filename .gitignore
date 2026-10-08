@@ -8,3 +8,4 @@ hands/build/
 hands/app/build/
 hands/local.properties
 .DS_Store
+hands/.previous-ime

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { money, secs, type Run, type RunEvent } from "@/lib/engine";
+import { ENGINE, money, secs, type Run, type RunEvent } from "@/lib/engine";
 
 type Turn = { kind: "run"; run: Run; live: boolean } | { kind: "session"; session: number; at: number; capabilities: number };
 
@@ -88,6 +88,7 @@ function Exchange({ run, live, now }: { run: Run; live: boolean; now: number }) 
         {proof && <p className="text-ok">{proof.text}</p>}
         {run.error && <p className="text-thread">{run.error}</p>}
 
+        <Filmstrip events={run.events} live={live} />
         <Steps events={run.events} open={live} />
       </div>
     </div>
@@ -125,5 +126,47 @@ function Steps({ events, open }: { events: RunEvent[]; open: boolean }) {
         </button>
       )}
     </div>
+  );
+}
+
+// What the phone showed at each step, newest last. Click a frame to see it large with its step.
+function Filmstrip({ events, live }: { events: RunEvent[]; live: boolean }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const strip = useRef<HTMLDivElement>(null);
+  const shots = events.filter(e => e.frame);
+  useEffect(() => { if (live) strip.current?.scrollTo({ left: strip.current.scrollWidth, behavior: "smooth" }); }, [shots.length, live]);
+  if (!shots.length) return null;
+  const current = open === null ? null : shots[open];
+  return (
+    <>
+      <div ref={strip} className="flex gap-2 overflow-x-auto pb-1">
+        {shots.map((e, i) => (
+          <button key={e.frame} type="button" onClick={() => setOpen(i)} title={e.text}
+            className="group relative shrink-0 overflow-hidden rounded-lg border border-line hover:border-dawn">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={ENGINE + e.frame} alt={e.text || "step"} loading="lazy" className="h-36 w-auto object-cover" />
+            <span className="absolute inset-x-0 bottom-0 bg-night/85 px-1.5 py-0.5 font-mono text-[10px] text-flesh">{i + 1}</span>
+          </button>
+        ))}
+      </div>
+      {current && (
+        <div role="dialog" aria-modal="true" onClick={() => setOpen(null)} className="fixed inset-0 z-50 grid place-items-center bg-night/90 p-6">
+          <div onClick={ev => ev.stopPropagation()} className="flex max-h-full items-center gap-6">
+            <button type="button" aria-label="Previous step" disabled={open === 0} onClick={() => setOpen(o => Math.max((o ?? 0) - 1, 0))}
+              className="grid size-12 place-items-center rounded-full border border-line text-2xl disabled:opacity-30">&#8249;</button>
+            <figure className="flex max-h-[90vh] flex-col items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={ENGINE + current.frame} alt={current.text || "step"} className="max-h-[80vh] w-auto rounded-2xl border border-line" />
+              <figcaption className="max-w-xl text-center">
+                <span className="font-mono text-xs tracking-wider text-muted uppercase">Step {(open ?? 0) + 1} of {shots.length} · {current.kind || current.type}</span>
+                <p className="text-lg">{current.text}{current.why && <span className="text-muted"> · {current.why}</span>}</p>
+              </figcaption>
+            </figure>
+            <button type="button" aria-label="Next step" disabled={open === shots.length - 1} onClick={() => setOpen(o => Math.min((o ?? 0) + 1, shots.length - 1))}
+              className="grid size-12 place-items-center rounded-full border border-line text-2xl disabled:opacity-30">&#8250;</button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
