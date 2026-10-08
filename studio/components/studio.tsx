@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api } from "@/lib/engine";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { api, DEVICE, DEVICES } from "@/lib/engine";
 import { useEngine } from "./use-engine";
 import { Chat } from "./chat";
 import { PhonePanel } from "./phone-panel";
@@ -27,7 +27,7 @@ export default function Studio() {
     const text = task.trim();
     if (!text) return;
     setError("");
-    try { await api("/api/task", { task: text, app: app ?? undefined }); setTask(""); } catch (err) { setError((err as Error).message); }
+    try { await api("/api/task", { task: text, app: app ?? undefined }); setTask(""); recall.current = -1; } catch (err) { setError((err as Error).message); }
   }
   const stop = () => api("/api/stop", {}).catch(err => setError(err.message));
   // Esc stops the agent, like stopping a person mid-task.
@@ -38,11 +38,12 @@ export default function Studio() {
   });
   // Arrow up brings back what you asked before, newest first, like a terminal. Arrow down goes forward again.
   const recall = useRef(-1);
-  const asked = [...new Set([...(state?.runs ?? [])].reverse().map(r => r.task))];
+  // Newest first: the task running now, then finished runs by time. Each request once.
+  const asked = [...new Set([live?.task, ...[...(state?.runs ?? [])].sort((a, b) => b.at - a.at).map(r => r.task)].filter((t): t is string => !!t))];
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
     if (e.key === "ArrowUp" && task && recall.current === -1) return; // keep the cursor keys for a draft
-    const next = e.key === "ArrowUp" ? Math.min(recall.current + 1, asked.length - 1) : recall.current - 1;
+    const next = e.key === "ArrowUp" ? Math.min(recall.current + 1, asked.length - 1) : Math.max(recall.current - 1, -1);
     if (next === recall.current) return;
     e.preventDefault();
     recall.current = next;
@@ -58,6 +59,7 @@ export default function Studio() {
           <span className="text-muted">grows new limbs, not new privileges</span>
         </div>
         <div className="flex flex-wrap items-center gap-3 font-mono text-sm">
+          <DevicePicker />
           {offline && <Chip tone="bad">Engine offline</Chip>}
           <Chip>Session {state?.session ?? 1}</Chip>
           <Chip tone={state && !state.hasKey ? "bad" : undefined}>{state ? state.model : "model"}</Chip>
@@ -144,5 +146,19 @@ function Examples({ onPick }: { onPick: (text: string) => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Which device this tab drives. Switching reloads the page onto that device's engine; open tabs to watch several.
+function DevicePicker() {
+  const current = useSyncExternalStore(() => () => {}, () => DEVICE.id, () => "phone");
+  return (
+    <label className="flex items-center gap-2">
+      <span className="sr-only">Device</span>
+      <select value={current} onChange={e => { window.location.search = e.target.value === "phone" ? "" : `?d=${e.target.value}`; }}
+        className="rounded-lg border border-line bg-night-2 px-3 py-2 font-sans text-base hover:border-muted">
+        {DEVICES.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+      </select>
+    </label>
   );
 }
