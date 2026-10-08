@@ -3,7 +3,8 @@ import http from 'node:http';
 import { Registry } from './registry.mjs';
 import { Agent } from './agent.mjs';
 import { screenshot, handsAvailable } from './adb.mjs';
-import { model } from './llm.mjs';
+import { model, provider, hasCredentials } from './llm.mjs';
+import { serveStream } from './stream.mjs';
 
 const PORT = Number(process.env.PORT || 4400);
 const clients = new Set();
@@ -42,7 +43,8 @@ const server = http.createServer(async (req, res) => {
       req.on('close', () => clients.delete(res));
       return;
     }
-    if (url.pathname === '/api/state') return json(res, 200, { ...agent.state(), model, hands: await handsAvailable(), hasKey: !!process.env.OPENAI_API_KEY });
+    if (url.pathname === '/api/state') return json(res, 200, { ...agent.state(), model, hands: await handsAvailable(), provider, hasKey: hasCredentials });
+    if (url.pathname === '/api/stream.mjpg') return serveStream(req, res);
     if (url.pathname === '/api/screen.png') {
       const png = await screenshot();
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
