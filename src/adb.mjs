@@ -109,6 +109,9 @@ async function observeHands(pkg = '') {
       return { nodes, pkg: d.pkg, at: Date.now(), via: 'hands' };
     } catch (e) {
       if (i === 4) throw e;
+      // The app has no window because something sits on top of it (a permission prompt on first launch):
+      // read the window that is really there, so the explorer can answer it.
+      if (pkg && i >= 2 && /no active window/.test(e.message)) pkg = '';
       await sleep(120);
     }
   }

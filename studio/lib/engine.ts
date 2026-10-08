@@ -1,7 +1,16 @@
 // Client for the Stitch engine (the Node process that holds the phone).
-export const ENGINE = process.env.NEXT_PUBLIC_ENGINE || "http://localhost:4400";
+// Every device the studio can drive: the USB phone, plus the emulators scripts/emulators.sh starts, one engine each.
+export const DEVICES = [
+  { id: "phone", label: "Phone (USB)", port: 4400 },
+  ...[1, 2, 3, 4].map(n => ({ id: `emu${n}`, label: `Emulator ${n}`, port: 4408 + 2 * n })),
+];
+// Picked with ?d=emu2, so each tab can hold a different device. Read in the browser only; the prerender uses the phone.
+const picked = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("d");
+export const DEVICE = DEVICES.find(d => d.id === picked) ?? DEVICES[0];
+const isPhone = DEVICE.id === "phone";
+export const ENGINE = (isPhone && process.env.NEXT_PUBLIC_ENGINE) || `http://localhost:${DEVICE.port}`;
 // Video on its own host and port, so it never queues behind the event streams of other open tabs.
-export const VIDEO = process.env.NEXT_PUBLIC_VIDEO || "http://127.0.0.1:4401/stream.mjpg";
+export const VIDEO = (isPhone && process.env.NEXT_PUBLIC_VIDEO) || `http://127.0.0.1:${DEVICE.port + 1}/stream.mjpg`;
 
 export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number; cost: number; ms: number };
 

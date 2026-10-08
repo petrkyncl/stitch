@@ -38,8 +38,9 @@ export function PhonePanel({ device, epoch, boxes }: { device: Device | null; ep
           title="Click to tap, drag to swipe"
         >
         {/* An MJPEG stream; next/image cannot optimize or proxy a never-ending response. */}
+        {/* The prerender only knows the phone; a tab on an emulator swaps the src once the engine connects. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`${VIDEO}?c=${epoch}`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
+        <img suppressHydrationWarning src={`${VIDEO}?c=${epoch}`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
