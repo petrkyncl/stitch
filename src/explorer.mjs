@@ -147,6 +147,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
     await logRaw(answer);
     const d = normalize(answer);
     const node = d.id !== null ? screen.nodes[d.id] : null;
+    await phone.highlight(screen.nodes, node);
     lastAct = `${d.action}${node ? ` ${nameOf(node)}` : ''}`;
     // Tapping an input the model wants to write into does nothing useful; the type action focuses it anyway.
     if (d.action === 'tap' && node?.editable && repeats > 0) {

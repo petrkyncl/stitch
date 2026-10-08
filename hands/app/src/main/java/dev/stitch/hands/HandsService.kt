@@ -25,6 +25,7 @@ import kotlin.concurrent.thread
 class HandsService : AccessibilityService() {
 
     private var server: ServerSocket? = null
+    private val overlay by lazy { Overlay(this) }
 
     // Nodes from the last /tree call, addressed by index. `gen` tells the caller which tree an id belongs to.
     @Volatile private var nodes: List<AccessibilityNodeInfo> = emptyList()
@@ -39,6 +40,7 @@ class HandsService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        overlay.detach()
         runCatching { server?.close() }
         super.onDestroy()
     }
@@ -89,6 +91,15 @@ class HandsService : AccessibilityService() {
     }
 
     private fun route(path: String, body: JSONObject): JSONObject = when (path.substringBefore("?")) {
+        // Boxes around what the agent read, a bold one around what it is about to use. Screen coordinates.
+        "/overlay" -> {
+            fun rect(a: JSONArray?) = a?.let { android.graphics.RectF(it.getDouble(0).toFloat(), it.getDouble(1).toFloat(), it.getDouble(2).toFloat(), it.getDouble(3).toFloat()) }
+            val list = body.optJSONArray("boxes") ?: JSONArray()
+            val boxes = (0 until list.length()).mapNotNull { rect(list.optJSONArray(it)) }
+            if (boxes.isEmpty() && !body.has("target")) overlay.hide()
+            else overlay.show(boxes, rect(body.optJSONArray("target")), body.optLong("ms", 1400))
+            JSONObject().put("ok", true)
+        }
         "/ping" -> JSONObject().put("ok", true)
         "/tree" -> tree(path.substringAfter("pkg=", "").substringBefore("&"))
         "/click" -> click(body)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ENGINE, money, secs, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
+import { ENGINE, money, secs, type Capability, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
 import { AppIcon } from "./app-picker";
 
 type Turn = { kind: "run"; run: Run; live: boolean } | { kind: "session"; session: number; at: number; capabilities: number };
@@ -23,7 +23,7 @@ const DOT: Record<string, string> = {
 
 type Ask = { pending: Pending | null; onDecide: (d: Decision) => void };
 
-export function Chat({ runs, live, sessions, now, pending, onDecide }: { runs: Run[]; live: Run | null; sessions: { session: number; at: number; capabilities: number }[]; now: number } & Ask) {
+export function Chat({ runs, live, sessions, now, pending, onDecide, capabilities }: { runs: Run[]; live: Run | null; sessions: { session: number; at: number; capabilities: number }[]; now: number; capabilities: Capability[] } & Ask) {
   const end = useRef<HTMLDivElement>(null);
   const turns: Turn[] = [
     ...runs.map(r => ({ kind: "run" as const, run: r, live: false })),
@@ -49,7 +49,7 @@ export function Chat({ runs, live, sessions, now, pending, onDecide }: { runs: R
     <div className="flex flex-col gap-6 px-1 py-2">
       {turns.map(t => t.kind === "session"
         ? <SessionMark key={`s${t.session}`} session={t.session} capabilities={t.capabilities} />
-        : <Exchange key={t.run.id} run={t.run} live={t.live} now={now} ask={t.live ? { pending, onDecide } : undefined} />)}
+        : <Exchange key={t.run.id} run={t.run} live={t.live} now={now} capabilities={capabilities} ask={t.live ? { pending, onDecide } : undefined} />)}
       <div ref={end} />
     </div>
   );
@@ -65,7 +65,7 @@ function SessionMark({ session, capabilities }: { session: number; capabilities:
   );
 }
 
-function Exchange({ run, live, now, ask }: { run: Run; live: boolean; now: number; ask?: Ask }) {
+function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boolean; now: number; ask?: Ask; capabilities: Capability[] }) {
   const waiting = live && ask?.pending;
   const outcome = waiting ? { label: "Waiting for you", tone: "text-dawn border-dawn/60" } : OUTCOME[live ? "working" : run.path || "failed"];
   const elapsed = live ? now - run.at : run.ms;
@@ -78,15 +78,12 @@ function Exchange({ run, live, now, ask }: { run: Run; live: boolean; now: numbe
       </div>
 
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <StitchMark />
-          <span className="font-semibold">Stitch</span>
+        <div className="flex flex-wrap items-center gap-2">
           <span className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px] tracking-wider uppercase ${outcome.tone}`}>
             {live && <span className="size-1.5 animate-pulse rounded-full bg-dawn" />}
             {outcome.label}
           </span>
-          <span className="flex-1" />
-          {run.capability && <span className="truncate font-mono text-xs text-muted">{run.capability}</span>}
+          <Skill run={run} capabilities={capabilities} />
         </div>
 
       <div className="flex max-w-[52rem] flex-col gap-3 rounded-2xl rounded-tl-md border border-line bg-night-2 p-4">
@@ -112,14 +109,19 @@ function Exchange({ run, live, now, ask }: { run: Run; live: boolean; now: numbe
 
 const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
-// The agent's mark: a stitched seam, its whole idea in one glyph.
-function StitchMark() {
+// Which learned capability did the work, in words: its app icon, its title and version, the code name on hover.
+function Skill({ run, capabilities }: { run: Run; capabilities: Capability[] }) {
+  if (!run.capability) return null;
+  const [name, v] = run.capability.split(" ");
+  const cap = capabilities.find(c => c.name === name);
+  const title = cap?.title || name.split(".").pop()!.replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+  const version = (v || (cap ? `v${cap.version}` : "")).replace("v", "version ");
   return (
-    <span className="grid size-6 place-items-center rounded-md bg-dawn text-night" aria-hidden>
-      <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-        <path d="M2 8h12" strokeDasharray="2.2 1.8" />
-        <path d="M4 5l1.5 6M8 5l1.5 6M12 5l-1.5 6" />
-      </svg>
+    <span title={`Capability ${run.capability}`} className="flex items-center gap-1.5 text-sm text-muted">
+      <span aria-hidden>using</span>
+      {cap?.app && <AppIcon pkg={cap.app} label={title} size={18} />}
+      <span className="text-flesh">{title}</span>
+      {version && <span>· {version}</span>}
     </span>
   );
 }

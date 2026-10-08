@@ -36,6 +36,18 @@ export default function Studio() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+  // Arrow up brings back what you asked before, newest first, like a terminal. Arrow down goes forward again.
+  const recall = useRef(-1);
+  const asked = [...new Set([...(state?.runs ?? [])].reverse().map(r => r.task))];
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    if (e.key === "ArrowUp" && task && recall.current === -1) return; // keep the cursor keys for a draft
+    const next = e.key === "ArrowUp" ? Math.min(recall.current + 1, asked.length - 1) : recall.current - 1;
+    if (next === recall.current) return;
+    e.preventDefault();
+    recall.current = next;
+    setTask(next < 0 ? "" : asked[next]);
+  };
   const act = (path: string, body?: unknown) => api(path, body ?? {}).then(refresh).catch(err => setError(err.message));
 
   return (
@@ -59,14 +71,14 @@ export default function Studio() {
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]">
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
-            <Chat runs={state?.runs ?? []} live={live} sessions={sessions} now={now}
+            <Chat runs={state?.runs ?? []} live={live} sessions={sessions} now={now} capabilities={state?.capabilities ?? []}
               pending={state?.pending ?? null} onDecide={decision => act("/api/permission", { decision })} />
           </div>
-          <form onSubmit={submit} className="flex flex-col gap-1 rounded-2xl border border-line bg-night-2 px-3 pt-2.5 pb-2 focus-within:border-muted/60">
+          <form onSubmit={submit} className="flex flex-col gap-1 rounded-2xl border border-line bg-night-2 px-3 pt-2.5 pb-2 transition-colors focus-within:border-dawn/50">
             <label htmlFor="task" className="sr-only">Ask the agent</label>
-            <input id="task" value={task} onChange={e => setTask(e.target.value)} autoComplete="off"
+            <input id="task" value={task} onChange={e => { setTask(e.target.value); recall.current = -1; }} onKeyDown={onKey} autoComplete="off"
               placeholder={busy ? "Working on it. Esc stops." : "Ask the phone for something"}
-              className="min-w-0 bg-transparent px-1 py-1.5 text-base text-flesh outline-none placeholder:text-muted/70" />
+              className="min-w-0 bg-transparent px-1 py-1.5 text-base text-flesh outline-none placeholder:text-muted/70 focus-visible:outline-none" />
             <div className="flex items-center gap-2">
               <AppPicker value={app} onChange={setApp} />
               <Examples onPick={setTask} />

@@ -6,11 +6,14 @@ import { collect } from './extract.mjs';
 
 // Poll the tree until the element shows up. Reading it costs ~20 ms, so waiting is cheap; apps that just
 // launched get longer.
+let seen = []; // the screen the last waitFor read, for the overlay
+
 async function waitFor(sel, pkg, timeoutMs) {
   const until = Date.now() + timeoutMs;
   do {
     const screen = await phone.observe(pkg);
     const node = findBySelector(screen.nodes, sel);
+    seen = screen.nodes;
     if (node) return node;
     await phone.sleep(150);
   } while (Date.now() < until);
@@ -70,6 +73,7 @@ export async function run(cap, params, { emit, allowExternal = false }) {
     const node = await waitFor(sel, pkg, justLaunched ? 6000 : 4000);
     justLaunched = false;
     if (!node) return { ok: false, step: i, reason: `element not found: ${sel.labelHas || sel.resourceId}` };
+    await phone.highlight(seen, node);
 
     if (s.op === 'tap') {
       if (s.external && !allowExternal) return { ok: false, held: true, step: i, reason: `"${s.label}" needs approval` };
