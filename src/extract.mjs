@@ -84,9 +84,12 @@ export function cleanRow(rules, texts) {
 
 const tidy = v => String(v).replace(/^[\s,;:·•|-]+|[\s,;:·•|-]+$/g, '');
 
-export function applyRules(rules, texts) {
+// `freq` (optional): how many collected rows contain each text. A name or title is unique to its row and does not
+// look like another field (a rating), so texts that repeat across rows or match a regex field are not counted by index.
+export function applyRules(rules, texts, freq) {
   // Ignore rules only decide what counts as "the n-th text"; regexes look at every non-caption text.
-  const kept = cleanRow(rules, texts);
+  const regexes = rules.fields.filter(f => f.regex).map(f => re(f.regex)).filter(Boolean);
+  const kept = cleanRow(rules, texts).filter(t => !freq || ((freq.get(t) || 0) < 2 && !regexes.some(r => r.test(t))));
   const drop = new Set(rules.drop || []);
   const all = texts.filter(t => !drop.has(t));
   const rec = {};
@@ -119,6 +122,10 @@ export async function defineExtractor({ meter, task, fields, rows }) {
       RULES);
     rules.fields = (rules.fields || []).filter(f => f.name);
     rules.drop = drop;
+    // Every column the person asked for must exist; leaving one out is how suggestions sneak in as results.
+    const norm = x => String(x).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const missing = (fields || []).filter(w => !rules.fields.some(f => norm(f.name).includes(norm(w)) || norm(w).includes(norm(f.name))));
+    if (missing.length) throw new Error(`these rows have no ${missing.join(', ')}`);
     if (!rules.key || !rules.fields.some(f => f.name === rules.key)) rules.key = rules.fields[0]?.name;
     // Local check: every field must be filled in at least one sample row, the key in most of them.
     const recs = rows.slice(0, 4).map(t => applyRules(rules, t));
@@ -139,12 +146,20 @@ export async function defineExtractor({ meter, task, fields, rows }) {
 // Collect records, scrolling the list until `limit` is reached or nothing new appears twice in a row.
 export async function collect({ rules, limit = 20, pkg, emit = () => {} }) {
   const seen = new Map();
+  const raw = [];
   let stale = 0;
+  // Results often load a moment after the search is submitted; wait for the first rows.
+  for (let t = Date.now(); Date.now() - t < 6000;) {
+    const { rows } = rowsOnScreen((await phone.observe(pkg)).nodes);
+    if (rows.some(texts => { const r = applyRules(rules, texts); return r[rules.key] && Object.values(r).filter(Boolean).length >= 2; })) break;
+    await phone.sleep(300);
+  }
   for (let page = 0; page < 40 && seen.size < limit && stale < 2; page++) {
     const screen = await phone.observe(pkg);
     const { list, rows } = rowsOnScreen(screen.nodes);
     let added = 0;
     for (const texts of rows) {
+      raw.push(texts);
       const rec = applyRules(rules, texts);
       const key = String(rec[rules.key] || '').toLowerCase();
       // Ads, image tiles and buttons in the list fill the name and nothing else; a real row fills more.
@@ -165,5 +180,17 @@ export async function collect({ rules, limit = 20, pkg, emit = () => {} }) {
     await phone.swipeAt(x, y2 - 150, x, Math.max(y1 + 150, y2 - 150 - (y2 - y1) * 0.7), 350);
     await phone.sleep(700); // lazy lists load the next page after the scroll settles
   }
-  return [...seen.values()].slice(0, limit);
+  // Second pass over everything collected: with the whole list in view, captions that repeat (ads, categories)
+  // and cut-off rows can be told apart from real names.
+  const freq = new Map();
+  for (const texts of raw) for (const t of new Set(texts)) freq.set(t, (freq.get(t) || 0) + 1);
+  const final = new Map();
+  for (const texts of raw) {
+    const rec = applyRules(rules, texts, freq);
+    const key = String(rec[rules.key] || '').toLowerCase();
+    if (!key || (rules.fields.length > 1 && Object.values(rec).filter(Boolean).length < 2)) continue;
+    const prev = final.get(key);
+    if (!prev || Object.values(rec).filter(Boolean).length > Object.values(prev).filter(Boolean).length) final.set(key, rec);
+  }
+  return [...(final.size ? final : seen).values()].slice(0, limit);
 }

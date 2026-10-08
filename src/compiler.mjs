@@ -116,7 +116,7 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
       const program = trace
         .map((s, i) => (['type', 'find', 'extract'].includes(s.op) ? { ...s, text: spec.typed[String(i)] } : s))
         .map((s, i) => (spec.targets[String(i)] && s.sel ? { ...s, sel: { ...s.sel, labelHas: spec.targets[String(i)], templated: true } } : s))
-        .filter((_, i) => i === 0 || !spec.drop.has(i));
+        .filter((st, i) => i === 0 || st.op === 'extract' || !spec.drop.has(i));
       const manifest = { ...manifestFor(program), app: trace[0]?.pkg };
       const { drop, drop_steps, typed, targets, ...clean } = spec;
       if (!expect) {

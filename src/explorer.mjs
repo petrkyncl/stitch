@@ -153,7 +153,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
     }
     const say = text => emit('step', { kind: 'explore', text, why: d.why, meter: meter.snapshot() });
 
-    if (['tap', 'long_press', 'type', 'enter'].includes(d.action) && !node) {
+    if (['tap', 'long_press', 'type'].includes(d.action) && !node) {
       history.push(`${d.action} failed: no element ${d.id} on this screen`);
       say(`${d.action}: no element ${d.id}`);
       continue;
@@ -205,10 +205,10 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         break;
       }
       case 'enter':
-        say(`enter on ${nameOf(node)}`);
+        say(`enter${node ? ` on ${nameOf(node)}` : ''}`);
         await phone.pressEnter();
-        trace.push({ op: 'enter', sel: selectorFor(node) });
-        history.push(`pressed enter on ${nameOf(node)}`);
+        trace.push({ op: 'enter' });
+        history.push('pressed enter');
         await phone.sleep(500);
         break;
       case 'find': {

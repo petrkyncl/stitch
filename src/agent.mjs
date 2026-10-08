@@ -170,7 +170,11 @@ export class Agent {
       emit('error', { text: `Test failed, not installing: ${res.reason}` });
       throw new Error(`Test failed: ${res.reason}`);
     }
-    emit('test', { text: `Test passed: "${res.verified}" is on screen` });
+    if (spec.steps.some(st => st.op === 'extract') && !res.data?.length) {
+      emit('error', { text: 'Test failed, not installing: the extraction collected no rows' });
+      throw new Error('Test failed: the extraction collected no rows');
+    }
+    emit('test', { text: `Test passed: ${res.verified || 'all steps ran'}` });
     return this.install(spec, previous, reason, tests);
   }
 
