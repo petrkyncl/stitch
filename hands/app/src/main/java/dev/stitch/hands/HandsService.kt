@@ -173,7 +173,10 @@ class HandsService : AccessibilityService() {
         for (ri in packageManager.queryIntentActivities(intent, 0)) {
             val pkg = ri.activityInfo.packageName
             if (!seen.add(pkg)) continue
-            arr.put(JSONObject().put("package", pkg).put("label", ri.loadLabel(packageManager).toString()))
+            val flags = ri.activityInfo.applicationInfo.flags
+            // Preinstalled, even if updated since: the person did not choose to install it.
+            val system = flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
+            arr.put(JSONObject().put("package", pkg).put("label", ri.loadLabel(packageManager).toString()).put("system", system))
         }
         return JSONObject().put("ok", true).put("apps", arr)
     }

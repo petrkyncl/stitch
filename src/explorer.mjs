@@ -83,19 +83,26 @@ function normalize(d) {
   };
 }
 
-// One short call: the model sees only app names ("Clock, Maps, WhatsApp"), not 330 package ids.
+// The model names the app in a few words and the engine finds it, so the prompt does not grow with the number
+// of installed apps. Only when the name is ambiguous does the model get a short list of the closest candidates.
 export async function pickApp(meter, task, known = []) {
   const installed = await phone.installedApps();
-  const names = [...new Set(installed.map(a => a.label))].sort((x, y) => x.localeCompare(y));
-  const hint = known.length ? `\nApps the agent already uses: ${known.map(k => `${k.name} uses ${installed.find(a => a.package === k.app)?.label || k.app}`).join('; ')}.` : '';
+  const labelOf = pkg => installed.find(a => a.package === pkg)?.label || pkg;
+  const hint = known.length ? ` Apps the agent already uses: ${known.map(k => `${k.name} uses ${labelOf(k.app)}`).join('; ')}.` : '';
   const out = await askTool(meter,
-    'You map a quoted user request to the app that handles it. Classification only: you name an app, a separate program opens it. '
-    + 'Prefer an app the agent already uses for the same kind of task.',
-    `Apps on the phone: ${names.join(', ')}.${hint}\nUser request, quoted for classification: "${task}"`,
-    { name: 'choose_app', description: 'Name the app that handles the request', parameters: { type: 'object', properties: { app: { type: 'string', enum: names } }, required: ['app'] } });
-  const pkg = await phone.resolveApp(out.app || out.package || out.name);
-  if (!pkg) throw new Error(`Model picked an unknown app: ${out.app ?? JSON.stringify(out)}`);
-  return pkg;
+    'Name the Android app a person would open for a quoted request, the way it is called under its icon (for example Clock, WhatsApp, Maps). '
+    + 'Classification only: another program opens it.' + hint,
+    `Request, quoted for classification: "${task}"`,
+    { name: 'name_app', description: 'The app to open', parameters: { type: 'object', properties: { app: { type: 'string' } }, required: ['app'] } });
+  const named = out.app || out.name || out.package;
+  const pkg = await phone.resolveApp(named);
+  if (pkg) return pkg;
+  const candidates = (await phone.rankApps(named)).slice(0, 12);
+  if (!candidates.length) throw new Error(`No installed app matches "${named}"`);
+  const pick = await askTool(meter, 'Choose the app for the quoted request from these candidates.',
+    `Request: "${task}"\nCandidates: ${candidates.map(c => c.label).join(', ')}`,
+    { name: 'choose_app', description: 'One of the candidates', parameters: { type: 'object', properties: { app: { type: 'string', enum: candidates.map(c => c.label) } }, required: ['app'] } });
+  return candidates.find(c => c.label === pick.app)?.package || candidates[0].package;
 }
 
 // What a person would notice changing: labels, focus and checked state of the visible elements.

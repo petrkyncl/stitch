@@ -230,12 +230,37 @@ export async function installedApps() {
   return list;
 }
 
-// "WhatsApp", "whatsapp" or "com.whatsapp" -> package name.
-export async function resolveApp(nameOrPackage) {
-  const q = String(nameOrPackage || '').trim().toLowerCase();
+// Rank installed apps against a name the model wrote ("Clock", "Samsung Clock", "WhatsApp", "com.whatsapp").
+// Exact matches beat prefixes beat shared words; apps the person installed beat preinstalled ones on a tie.
+const words = t => String(t).toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').split(/[^a-z0-9]+/).filter(Boolean);
+
+const NOISE = new Set(['com', 'android', 'app', 'apps', 'mobile', 'client', 'sec', 'samsung', 'google', 'org', 'net', 'cz']);
+
+export async function rankApps(name) {
+  const q = String(name || '').trim().toLowerCase();
+  const qw = words(q);
   const apps = await installedApps();
-  return (apps.find(a => a.package.toLowerCase() === q) || apps.find(a => a.label.toLowerCase() === q)
-    || apps.find(a => a.label.toLowerCase().startsWith(q)))?.package || null;
+  const scored = apps.map(a => {
+    const l = a.label.toLowerCase();
+    let score = 0;
+    if (a.package.toLowerCase() === q || l === q) score = 100;
+    else if (q.length >= 3 && l.startsWith(q)) score = 70;
+    else {
+      // Words from the label and the package; a vendor word alone ("google", "samsung") is not a match.
+      const lw = new Set([...words(a.label), ...words(a.package)]);
+      const shared = qw.filter(w => lw.has(w));
+      const meaningful = shared.filter(w => !NOISE.has(w) || words(a.label).includes(w) && words(a.label).length === 1 && qw.length === 1);
+      score = meaningful.length ? 30 + 30 * shared.length / qw.length : 0;
+    }
+    return { ...a, score: score + (a.system ? 0 : 1) };
+  });
+  return scored.filter(a => a.score > 1).sort((x, y) => y.score - x.score);
+}
+
+export async function resolveApp(nameOrPackage) {
+  const [best, next] = await rankApps(nameOrPackage);
+  // Confident only when the best match clearly wins.
+  return best && best.score >= 40 && (!next || best.score - next.score >= 10 || best.score >= 100) ? best.package : null;
 }
 
 export async function launchableApps() {
