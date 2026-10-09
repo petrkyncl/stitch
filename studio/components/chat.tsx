@@ -18,7 +18,7 @@ const OUTCOME: Record<string, { label: string; tone: string }> = {
 
 const DOT: Record<string, string> = {
   explore: "bg-muted", run: "bg-ok", gap: "bg-dawn", compile: "bg-dawn", test: "bg-flesh", install: "bg-ok", done: "bg-ok",
-  route: "bg-ok", use: "bg-ok", broken: "bg-dawn", blocked: "bg-thread", held: "bg-thread", error: "bg-thread", stopped: "bg-muted", ask: "bg-dawn",
+  route: "bg-ok", use: "bg-ok", broken: "bg-dawn", blocked: "bg-thread", held: "bg-thread", error: "bg-thread", stopped: "bg-muted", ask: "bg-dawn", answer: "bg-dawn",
 };
 
 type Ask = { pending: Pending | null; onDecide: (d: Decision) => void };
@@ -104,6 +104,12 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
         </div>
 
         {proof && <p className="text-ok">{proof.text}</p>}
+        {(run.reply || (live && run.events.findLast(e => e.type === "answer")?.text)) && (
+          <figure className="flex flex-col gap-1.5 rounded-xl border-l-2 border-dawn bg-night px-4 py-3">
+            <figcaption className="font-mono text-xs tracking-wider text-muted uppercase">The app answered</figcaption>
+            <p className="whitespace-pre-wrap">{run.reply || run.events.findLast(e => e.type === "answer")?.text}</p>
+          </figure>
+        )}
         {run.error && <p className="text-thread">{run.error}</p>}
 
         {run.data && run.data.length > 0 && <DataTable rows={run.data} name={run.task} />}

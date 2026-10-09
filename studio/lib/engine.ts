@@ -69,6 +69,7 @@ export type Run = MeterSnapshot & {
   at: number;
   events: RunEvent[];
   data?: Record<string, string>[];
+  reply?: string; // what the app answered after a send, when the request asked for it
 };
 
 export type App = { package: string; label: string; system?: boolean };
