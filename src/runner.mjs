@@ -169,8 +169,9 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
   return { ok: false, irreversible, step: cap.steps.length, reason: `"${want}" is not on screen after the last step` };
 }
 
-// What an app answers after a send (a chatbot reply): the texts that were not on screen before, without what was
-// typed and without buttons. Chat apps write the answer out bit by bit, so wait until it stops changing.
+// What an app answers after a send (a chatbot reply): the longest new text on screen and the paragraphs right next
+// to it. Only real text counts (icon buttons such as "Copy message" carry just a description), nothing that was there
+// before, nothing typed. Chat apps write the answer out bit by bit, so wait until it stops changing.
 async function readReply(pkg, before, params) {
   const typed = Object.values(params || {}).map(v => String(v).trim().toLowerCase());
   let last = '';
@@ -179,12 +180,22 @@ async function readReply(pkg, before, params) {
   while (Date.now() < until) {
     const { nodes } = await phone.observe(pkg);
     const fresh = nodes
-      .filter(n => !n.clickable && !n.editable && phone.label(n) && !before.has(phone.label(n)))
-      .map(n => phone.label(n).trim())
-      .filter(t => t.length > 2 && !typed.includes(t.toLowerCase()));
-    const text = [...new Set(fresh)].join('\n');
+      .filter(n => n.text && !n.clickable && !n.editable && !before.has(n.text) && n.text.trim().length > 2 && !typed.includes(n.text.trim().toLowerCase()))
+      .sort((a, b) => a.bounds[1] - b.bounds[1]);
+    const text = block(fresh);
     if (text && text === last) { if (++steady >= 3) return text; } else { steady = 0; last = text; }
     await phone.sleep(700);
   }
   return last;
+}
+
+// The longest text and its neighbours above and below that start in the same column with little space between.
+function block(sorted) {
+  if (!sorted.length) return '';
+  const at = sorted.reduce((best, n, i) => (n.text.length > sorted[best].text.length ? i : best), 0);
+  const near = (a, b) => Math.abs(a.bounds[0] - b.bounds[0]) < 80 && b.bounds[1] - a.bounds[3] < 90;
+  let lo = at, hi = at;
+  while (lo > 0 && near(sorted[lo - 1], sorted[lo])) lo -= 1;
+  while (hi < sorted.length - 1 && near(sorted[hi], sorted[hi + 1])) hi += 1;
+  return sorted.slice(lo, hi + 1).map(n => n.text.trim()).join('\n');
 }

@@ -12,7 +12,10 @@ export function useEngine() {
   const [device, setDevice] = useState<Device | null>(null);
   const [offline, setOffline] = useState(false);
   const [sessions, setSessions] = useState<{ session: number; at: number; capabilities: number }[]>([]);
-  const [epoch, setEpoch] = useState(0); // bumps on every (re)connect, so the video reconnects after an engine restart
+  // The engine's start time: the video reopens only when the engine really restarted, not on every hiccup of the
+  // event stream (that used to blank the phone for a few seconds each time).
+  const [epoch, setEpoch] = useState(0);
+  const misses = useRef(0); // offline only after two failed checks in a row, not after one slow answer
   const [now, setNow] = useState(0); // set on the client only, the clock is meaningless during prerender
   const liveRef = useRef<Run | null>(null);
 
@@ -20,12 +23,14 @@ export function useEngine() {
     try {
       const s = await api<EngineState>("/api/state");
       setState(s);
+      misses.current = 0;
       setOffline(false);
       // Rejoin a run that started before this page loaded.
       if (s.current && !liveRef.current) { liveRef.current = { ...EMPTY, ...s.current }; setLive(liveRef.current); }
       if (!s.current) { liveRef.current = null; setLive(null); }
     } catch {
-      setOffline(true);
+      misses.current += 1;
+      if (misses.current >= 2) setOffline(true);
     }
   }, []);
 
@@ -42,9 +47,9 @@ export function useEngine() {
     let closed = false;
     const connect = () => {
       es = new EventSource(engineUrl() + "/api/events");
-      es.onopen = () => { setOffline(false); setEpoch(e => e + 1); refresh(); };
+      es.onopen = () => { refresh(); };
       es.onerror = () => {
-        setOffline(true);
+        refresh(); // only a failed state check says the engine is gone; the event stream drops for many reasons
         es?.close();
         if (!closed) retry = setTimeout(connect, 1000);
       };
@@ -83,8 +88,18 @@ export function useEngine() {
   // Device status every few seconds; a ticking clock for the run in progress.
   useEffect(() => {
     let stop = false;
+    let failed = 0;
     const poll = async () => {
-      try { const d = await api<Device>("/api/device"); if (!stop) setDevice(d); } catch { if (!stop) setDevice({ connected: false }); }
+      try {
+        const d = await api<Device>("/api/device");
+        failed = 0;
+        if (stop) return;
+        setDevice(d);
+        if (d.started) setEpoch(e => (e === d.started ? e : d.started!));
+      } catch {
+        // One missed answer keeps what we knew; two in a row mean the engine is away.
+        if (!stop && ++failed >= 2) setDevice({ connected: false });
+      }
     };
     poll();
     const t = setInterval(poll, 5000);
