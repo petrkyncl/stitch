@@ -99,7 +99,7 @@ const TOOL = {
       patterns: { type: 'array', items: { type: 'string' } },
       drop_steps: { type: 'array', items: { type: 'integer' }, description: 'Indices of trace steps to leave out' },
       typed: { type: 'array', items: { type: 'object', properties: { step: { type: 'integer' }, template: { type: 'string' } }, required: ['step', 'template'] } },
-      targets: { type: 'array', description: 'Steps whose element is chosen by the input: label template of that element', items: { type: 'object', properties: { step: { type: 'integer' }, label: { type: 'string' } }, required: ['step', 'label'] } },
+      targets: { type: 'array', description: 'Steps whose element is chosen by the input: label template of that element. Or "*" for a fixed control that only shows the value (a time picker\'s hour field): it is found by its id, whatever it shows', items: { type: 'object', properties: { step: { type: 'integer' }, label: { type: 'string' } }, required: ['step', 'label'] } },
       expect: { type: 'string', description: 'Template of a short text visible after success, e.g. {{hour|pad2}}:{{minute}}' },
       repeat: { type: 'boolean', description: 'true when the request is about all or every item ("delete all alarms") but the trace handled one: the program then repeats until no such item is left' },
       repeat_step: { type: 'integer', description: 'With repeat: the trace step that picks the item to act on (e.g. the long press on an alarm)' },
@@ -147,7 +147,8 @@ export async function compile({ task, trace, expect, final, meter, emit, previou
       const program = trace
         .map((s, i) => (i === repeatAt ? { ...s, item: true, sel: { resourceId: s.sel.resourceId, labelHas: '', cls: s.sel.cls } } : s))
         .map((s, i) => (['type', 'find', 'extract'].includes(s.op) ? { ...s, text: spec.typed[String(i)] } : s))
-        .map((s, i) => (spec.targets[String(i)] && s.sel ? { ...s, sel: { ...s.sel, labelHas: spec.targets[String(i)], templated: true } } : s))
+        .map((s, i) => (spec.targets[String(i)] === '*' && s.sel ? { ...s, sel: { ...s.sel, labelHas: '' } }
+          : spec.targets[String(i)] && s.sel ? { ...s, sel: { ...s.sel, labelHas: spec.targets[String(i)], templated: true } } : s))
         .filter((st, i) => i === 0 || KEEP.has(st.op) || st.item || st.final || st.external || !spec.drop.has(i));
       const manifest = { ...manifestFor(program), app: trace[0]?.pkg };
       const { drop, drop_steps, typed, targets, repeat_step, ...clean } = spec;
@@ -205,6 +206,13 @@ export function validate(spec, task, trace, expect) {
   }
   if (got) {
     for (const p of params) if (!(p in got)) problems.push(`pattern does not capture param "${p}" and it has no default`);
+    // A number from the request written into a pattern makes a program for that number only ("7:{{minute}}").
+    const slotless = p => String(p).replace(TEMPLATE_SLOT, ' ').replace(/\(\?<\w+>[^)]*\)/g, ' ');
+    TEMPLATE_SLOT.lastIndex = 0;
+    for (const n of new Set(task.match(/\d+/g) || [])) {
+      const fixed = (spec.patterns || []).find(p => new RegExp(`(^|\\D)${n}(\\D|$)`).test(slotless(p)));
+      if (fixed) problems.push(`pattern "${fixed}" has the request's ${n} written in; make it a param that a step sets, even if the screen already showed ${n}`);
+    }
     // A value the request gives that is no param would be ignored: "7:35" set as 12:35.
     for (const [k, v] of Object.entries(matched)) if (!params.includes(k)) problems.push(`the pattern captures "${k}" (${v}) but there is no param "${k}", so the program would ignore it; add it and use it in a step`);
     const values = Object.values(got).filter(v => String(v).length > 0);
@@ -212,6 +220,10 @@ export function validate(spec, task, trace, expect) {
     for (const k of Object.keys(spec.targets || {})) if (!['tap', 'long_press'].includes(trace[Number(k)]?.op)) delete spec.targets[k];
     trace.forEach((s, i) => {
       if (i === 0 || (spec.drop.has(i) && !KEEP.has(s.op))) return; // kept steps are checked even when marked for dropping
+      if (spec.targets?.[String(i)] === '*') {
+        if (!s.sel?.resourceId) problems.push(`step ${i} has target "*" but its element has no id to find it by; use a label template`);
+        return;
+      }
       const target = spec.targets?.[String(i)] && (autofix(spec.targets[String(i)], got, s.label || '', true) || spec.targets[String(i)]);
       if (target) spec.targets[String(i)] = target;
       if (target) {
@@ -222,7 +234,7 @@ export function validate(spec, task, trace, expect) {
         return;
       }
       if ((s.op === 'tap' || s.op === 'long_press') && values.some(v => new RegExp(`(^|\\D)0*${String(v).replace(/^0+(?=\d)/, '')}(\\D|$)`).test(s.sel?.labelHas || s.label || ''))) {
-        problems.push(`step ${i} taps "${s.label}", which depends on the input; drop it, or if the input chooses this element give it a label template in "targets"`);
+        problems.push(`step ${i} taps "${s.label}", which depends on the input; drop it, or if the input chooses this element give it a label template in "targets", or "*" if it is a fixed control that only shows the value (a picker's hour field)`);
       }
       if (s.op !== 'type' && s.op !== 'find' && s.op !== 'extract') return;
       let t = spec.typed?.[String(i)];

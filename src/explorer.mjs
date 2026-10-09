@@ -48,6 +48,8 @@ To write into an input use "type" directly: it focuses the input by itself, so n
 Type only the text the request wants entered, in the request's own words, never the whole request and never reworded:
 for "prompt Claude to give me a joke" type exactly "give me a joke".
 Type it even when the input already shows that text (a draft from before): the typing is part of the task.
+Set every value the request gives even when the screen already shows it (a time picker may open on the right hour):
+tap or type it anyway, so the learned program sets it every time.
 If an action did not change the screen, do something different instead of repeating it.
 The tap that finishes the request (Save, Send, Done, Create on the last screen) you do not press yourself: answer it as
 {"action":"tap","id":57,"finishes":true,"expect":"07:35"} with expect = the short text that will prove it afterwards.
@@ -157,6 +159,7 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
   let extractFailures = 0;
   const acts = [];
   let nudgedToType = false;
+  let nudgedToSet = false;
   let nudgedWords = false;
   let current = pkg;
   let lastPrint = '';
@@ -236,6 +239,16 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
         // always mark) is learned, not pressed: the program presses it once it has been tested from the start, so
         // learning sets one alarm, not two. A send is held the same way, above.
         if (trace.length > 1 && (d.finishes || (FINISH.test(phone.label(node) || '') && trace.some(t => fromRequest(t, task))))) {
+          // Every number the request gives has to be set by a step, even one the screen already showed (a time picker
+          // opening on the right hour), or the program is for that one value only.
+          const set = trace.map(t => `${t.op === 'type' ? t.text : t.op === 'tap' ? t.label : ''}`).join(' ');
+          const unset = (task.match(/\d+/g) || []).filter(n => !new RegExp(`(^|\\D)0*${Number(n)}(\\D|$)`).test(set));
+          if (unset.length && !nudgedToSet) {
+            nudgedToSet = true;
+            history.push(`not saved yet: no step has set ${unset.join(', ')} from the request. Set it now even though the screen may already show it (e.g. tap the hour, then ${unset[0]}), then finish`);
+            say(`${unset.join(', ')} not set by a step yet, setting it first`);
+            break;
+          }
           trace.push({ ...step, final: true });
           emit('step', { kind: 'explore', text: `Mapped everything up to ${nameOf(node)}. The learned program presses it after its test` });
           return { pkg, trace, expect: d.finishes && d.expect ? String(d.expect).slice(0, 30) : '', held: true, final: true, heldIn: current };

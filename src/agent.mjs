@@ -260,6 +260,13 @@ export class Agent {
       }, required: ['capability'] } }, { purpose: 'planning' });
     const cap = out.capability && this.registry.get(out.capability);
     if (!cap) return null;
+    // Every number the request gives must reach a param, or the program would run with something else (6:20 as 7:20).
+    const given = Object.values(out.params || {}).join(' ');
+    const lost = (task.match(/\d+/g) || []).filter(n => !new RegExp(`(^|\\D)0*${Number(n)}(\\D|$)`).test(given));
+    if (lost.length) {
+      emit('route', { text: `${cap.name} cannot take ${lost.join(', ')} from the request, so it is not used`, via: 'model' });
+      return null;
+    }
     emit('route', { text: `Model routed to ${cap.name} v${cap.version}`, via: 'model' });
     const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
     return { cap, params: { ...defaults, ...(out.params || {}) } };
