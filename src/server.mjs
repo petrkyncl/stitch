@@ -141,7 +141,7 @@ async function report(id) {
   const decisions = (await readFile('runs/decisions.jsonl', 'utf8').catch(() => '')).split('\n').filter(Boolean)
     .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(d => d?.at >= r.at - 1000 && d.at <= end);
   const capName = r.capability?.split(' + ').at(-1)?.split(' ')[0];
-  const cap = capName ? await readFile(`registry/${capName}/capability.json`, 'utf8').catch(() => '') : '';
+  const cap = capName ? await readFile(`${process.env.STITCH_REGISTRY || 'registry'}/${capName}/capability.json`, 'utf8').catch(() => '') : '';
   let screen = '';
   try { const { compact } = await import('./ui.mjs'); const { observe } = await import('./adb.mjs'); const o = await observe(); screen = `${o.pkg}\n${compact(o.nodes)}`; } catch (e) { screen = `could not read: ${e.message}`; }
   let commit = '';

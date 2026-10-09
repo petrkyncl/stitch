@@ -8,6 +8,7 @@ type Props = {
   runs: Run[];
   capabilities: Capability[];
   granted?: EngineState["granted"];
+  limits?: EngineState["limits"];
   onApprove: (name: string) => void;
   onRevoke: (name: string) => void;
   onBreak: (name: string) => void;
@@ -15,12 +16,12 @@ type Props = {
 
 const capName = (r: Run) => r.capability?.replace(/ v\d+$/, "");
 
-export function Insights({ runs, capabilities, granted, onApprove, onRevoke, onBreak }: Props) {
+export function Insights({ runs, capabilities, granted, limits, onApprove, onRevoke, onBreak }: Props) {
   return (
     <div className="flex flex-col gap-8">
       <LearnVsReuse runs={runs} />
       <Totals runs={runs} />
-      <Registry capabilities={capabilities} granted={granted} onApprove={onApprove} onRevoke={onRevoke} onBreak={onBreak} />
+      <Registry capabilities={capabilities} granted={granted} limits={limits} onApprove={onApprove} onRevoke={onRevoke} onBreak={onBreak} />
     </div>
   );
 }
@@ -89,13 +90,13 @@ function Totals({ runs }: { runs: Run[] }) {
   );
 }
 
-function Registry({ capabilities, granted, onApprove, onRevoke, onBreak }: Omit<Props, "runs">) {
+function Registry({ capabilities, granted, limits, onApprove, onRevoke, onBreak }: Omit<Props, "runs">) {
   const [apps, setApps] = useState<App[]>([]);
   useEffect(() => { api<App[]>("/api/apps").then(setApps).catch(() => {}); }, [capabilities.length]);
   const appLabel = (pkg?: string) => apps.find(a => a.package === pkg)?.label || pkg?.split(".").pop() || "app";
 
   return (
-    <Section title="What it has learned" note={granted ? `started with: ${granted.permissions.join(", ").replace(/_/g, " ")}` : undefined}>
+    <Section title="What it has learned" note={granted ? `Started with ${granted.permissions.join(", ").replace(/_/g, " ")}${limits ? `. At most ${limits.calls} model calls and $${limits.dollars.toFixed(2)} per run` : ""}` : undefined}>
       {!capabilities.length && <p className="text-muted">Nothing yet. Stitch starts able to read the screen, tap and type, nothing more.</p>}
       {capabilities.map(c => {
         const needsApproval = c.status === "held";
@@ -127,7 +128,7 @@ function Registry({ capabilities, granted, onApprove, onRevoke, onBreak }: Omit<
 
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
               <span>Used {c.runs}×</span>
-              <span>{c.tests?.total ? (c.tests.passed === c.tests.total ? "Test passed" : "Test failed") : "Not tested, it would change something"}</span>
+              <span title={c.tests?.last}>{c.tests?.total ? (c.tests.passed === c.tests.total ? (c.tests.dry ? "Tested up to the send" : "Test passed") : "Test failed") : "Not tested"}</span>
               <span>{c.steps} steps</span>
               <span>{repaired ? `Version ${c.version}, repaired after an app change` : `Version ${c.version}`}</span>
             </div>

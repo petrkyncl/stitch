@@ -20,8 +20,21 @@ export const exploreModel = EXPLORE_MODEL;
 export const provider = IS_OPENAI ? 'openai' : BASE;
 export const hasCredentials = IS_OPENAI ? !!KEY : true;
 
+// Hard caps per run, enforced before every model call: a run never makes more calls or spends more than this.
+export const LIMITS = Object.freeze({
+  calls: Number(process.env.MAX_CALLS_PER_RUN || 40),
+  dollars: Number(process.env.MAX_SPEND_PER_RUN || 0.5),
+});
+
+export class CapError extends Error {}
+
 export class Meter {
   constructor() { this.reset(); }
+  // Throws before a call that the caps no longer allow; the run then stops with this reason.
+  guard() {
+    if (this.calls >= LIMITS.calls) throw new CapError(`Stopped at the cap of ${LIMITS.calls} model calls per run`);
+    if (this.dollars >= LIMITS.dollars) throw new CapError(`Stopped at the cap of $${LIMITS.dollars.toFixed(2)} spend per run`);
+  }
   reset() { this.calls = 0; this.tokensIn = 0; this.tokensOut = 0; this.dollars = 0; this.started = Date.now(); }
   add(usage, prompt, reply, model = MODEL) {
     this.calls += 1;
@@ -63,6 +76,7 @@ export async function askJSON(meter, system, user, { required = [] } = {}) {
 }
 
 async function askOnce(meter, system, user) {
+  meter.guard();
   if (!hasCredentials) throw new Error('No API key. Set OPENAI_API_KEY in .env, or point LLM_BASE_URL at a local wrapper.');
   const body = {
     model: MODEL,
@@ -105,6 +119,7 @@ const noForcedTools = new Set();
 
 // Forced tool call: the model must answer through one function with a JSON schema. Far stricter than "reply with JSON".
 export async function askTool(meter, system, user, tool, { model = MODEL } = {}) {
+  meter.guard();
   if (!hasCredentials) throw new Error('No API key. Set OPENAI_API_KEY in .env, or point LLM_BASE_URL at a local wrapper.');
   const body = {
     model,

@@ -20,6 +20,8 @@ async function waitFor(sel, pkg, timeoutMs) {
   return null;
 }
 
+const MAX_ROUNDS = Number(process.env.MAX_ROUNDS_PER_RUN || 100); // the cap on repeating "all of them"
+
 // `confirm(step)` is asked right before a step that sends, pays or deletes, with everything before it already
 // done on screen, so the person sees exactly what would go out. Without it such a step holds the run.
 // `from` and `pkg` start it part way, on a screen that is already prepared (right after learning, the message is
@@ -29,7 +31,13 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
   let justLaunched = false;
   let irreversible = false; // set once a step that sends, pays or deletes has run
   let before = new Set(); // texts on screen right before that step
-  for (let i = from; i < cap.steps.length; i++) {
+  // "All of them": after a round, go back to the step that picks an item while one is left (capped in code).
+  const itemAt = cap.repeat ? cap.steps.findIndex(st => st.item) : -1;
+  let rounds = 0;
+  let retried = false; // one second try per run when an item does not open as expected
+  let start = from;
+  for (;;) {
+  for (let i = start; i < cap.steps.length; i++) {
     const s = cap.steps[i];
     const say = text => emit('step', { kind: 'run', text });
 
@@ -91,16 +99,31 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
         say(`skip "${s.label || sel.labelHas}": not shown this time`);
         continue;
       }
-      return { ok: false, step: i, reason: `element not found: ${sel.labelHas || sel.resourceId}` };
+      // In a later round of "all of them", no item to pick means none is left: that is the goal, not a failure.
+      if (s.item && rounds > 0) return { ok: true, irreversible, verified: `none left after ${rounds} ${rounds === 1 ? 'round' : 'rounds'}` };
+      // Later in a round (the item did not open the way it did when learned): go back and pick it once more; if that
+      // fails too, say plainly how far it got.
+      if (itemAt >= 0 && i > itemAt && rounds > 0 && !retried) {
+        retried = true;
+        say(`"${s.label || sel.labelHas}" did not appear, picking the item again`);
+        await phone.globalAction('back').catch(() => {});
+        await phone.settle(pkg, 1500);
+        i = itemAt - 1;
+        continue;
+      }
+      if (itemAt >= 0 && rounds > 0) return { ok: false, irreversible, step: i, reason: `did ${rounds} of them, then "${s.label || sel.labelHas}" did not appear for the next one, so some are left` };
+      return { ok: false, irreversible, step: i, reason: `element not found: ${sel.labelHas || sel.resourceId}` };
     }
     await phone.highlight(seen, node);
 
+    if (s.item) say(`pick "${phone.label(node) || 'the next one'}"`); // the item this round acts on
     if (s.op === 'tap') {
       if (s.external && !allowExternal) {
         await phone.highlight([], node, 10 * 60 * 1000); // keep the button marked while the person decides
         const allowed = confirm ? await confirm(s) : false;
         await phone.highlight([], null, 1);
         if (!allowed) return { ok: false, held: true, step: i, reason: `"${s.label}" was not allowed` };
+        allowExternal = true; // one yes covers this whole request, every round of it
       }
       say(`tap "${sel.labelHas || s.label}"`);
       if (s.external) before = new Set(seen.map(phone.label).filter(Boolean)); // to tell the answer from what was there
@@ -108,7 +131,7 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
       if (s.external) irreversible = true;
       await phone.settle(pkg);
     } else if (s.op === 'long_press') {
-      say(`long press "${sel.labelHas || s.label}"`);
+      say(`long press "${s.item ? phone.label(node) : sel.labelHas || s.label}"`);
       await phone.nodeAction(node, 'long_click');
       await phone.sleep(500);
     } else if (s.op === 'type') {
@@ -131,6 +154,15 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
       await phone.nodeAction(node, s.direction === 'up' ? 'scroll_backward' : 'scroll_forward').catch(() => phone.scroll(s.direction));
       await phone.sleep(350);
     }
+  }
+    if (itemAt < 0) break;
+    rounds += 1;
+    await phone.settle(pkg, 1500);
+    const left = findBySelector((await phone.observe(pkg)).nodes, cap.steps[itemAt].sel);
+    if (!left) return { ok: true, irreversible, verified: `none left after ${rounds} ${rounds === 1 ? 'round' : 'rounds'}` };
+    if (rounds >= MAX_ROUNDS) return { ok: false, irreversible, step: itemAt, reason: `stopped at the cap of ${MAX_ROUNDS} rounds with some left` };
+    emit('step', { kind: 'run', text: `Round ${rounds} done, more left, going again` });
+    start = itemAt;
   }
   if (cap.sent) {
     // Something was typed and then sent: the text must now show outside the input field, as a sent message.

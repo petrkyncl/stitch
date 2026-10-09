@@ -93,7 +93,7 @@ export type Capability = {
   permissions: string[];
   status: "installed" | "held";
   reason?: string;
-  tests?: { passed: number; total: number; last?: string };
+  tests?: { passed: number; total: number; last?: string; dry?: boolean };
   runs: number;
   steps: number;
 };
@@ -116,6 +116,7 @@ export type EngineState = {
   hands: boolean;
   hasKey: boolean;
   boxes?: boolean;
+  limits?: { calls: number; dollars: number };
   exploreModel?: string;
 };
 

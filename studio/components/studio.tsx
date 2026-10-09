@@ -167,6 +167,7 @@ function Workspace() {
             runs={state?.runs ?? []}
             capabilities={state?.capabilities ?? []}
             granted={state?.granted}
+            limits={state?.limits}
             onApprove={name => act("/api/approve", { name })}
             onRevoke={name => act("/api/revoke", { name })}
             onBreak={name => act("/api/break", { name })}

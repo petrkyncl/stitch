@@ -72,6 +72,8 @@ the number of rows, e.g. "{{count}}" when the request names a number, else the l
 on the input only incidentally (for example tapping the "07" button in a picker when the hour is also typed).
 When the element itself is chosen by the input (the list item "07:14" to delete, the contact "David" to open), keep the
 step and give its label as a template in "targets", e.g. {"step":2,"label":"{{hour|pad2}}:{{minute}}"}.
+When the request covers all or every item (delete all alarms, mark every chat read) and the trace did it for one item,
+set repeat and repeat_step: the program repeats from that step while such an item is left.
 Give 2-4 regex patterns (JavaScript, named groups for every param, case-insensitive) that match natural requests like the original.`;
 
 const TOOL = {
@@ -89,6 +91,8 @@ const TOOL = {
       typed: { type: 'array', items: { type: 'object', properties: { step: { type: 'integer' }, template: { type: 'string' } }, required: ['step', 'template'] } },
       targets: { type: 'array', description: 'Steps whose element is chosen by the input: label template of that element', items: { type: 'object', properties: { step: { type: 'integer' }, label: { type: 'string' } }, required: ['step', 'label'] } },
       expect: { type: 'string', description: 'Template of a short text visible after success, e.g. {{hour|pad2}}:{{minute}}' },
+      repeat: { type: 'boolean', description: 'true when the request is about all or every item ("delete all alarms") but the trace handled one: the program then repeats until no such item is left' },
+      repeat_step: { type: 'integer', description: 'With repeat: the trace step that picks the item to act on (e.g. the long press on an alarm)' },
       reply: { type: 'boolean', description: 'true when the request wants back what the app answers after the last step, e.g. "and give me the result", "what does it say"' },
       test: { type: 'array', description: 'Test input, every param with a value different from the original task', items: { type: 'object', properties: { param: { type: 'string' }, value: { type: 'string' } }, required: ['param', 'value'] } },
     },
@@ -126,12 +130,18 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
     appendFile('runs/decisions.jsonl', JSON.stringify({ at: Date.now(), compile: attempt + 1, name: spec.name, params: spec.params, patterns: spec.patterns, typed: spec.typed, targets: spec.targets, expect: spec.expect, reply: spec.reply }) + '\n').catch(() => {}); // for reports
     const problems = validate(spec, task, trace, expect);
     if (!problems.length) {
+      // "All of them": the step that picks an item matches any item of that kind (its id, not this item's label), and
+      // the program repeats from it while one is left.
+      const repeatAt = spec.repeat && Number.isInteger(spec.repeat_step) && trace[spec.repeat_step]?.sel?.resourceId ? spec.repeat_step : -1;
+      if (repeatAt >= 0) delete spec.targets[String(repeatAt)];
       const program = trace
+        .map((s, i) => (i === repeatAt ? { ...s, item: true, sel: { resourceId: s.sel.resourceId, labelHas: '', cls: s.sel.cls } } : s))
         .map((s, i) => (['type', 'find', 'extract'].includes(s.op) ? { ...s, text: spec.typed[String(i)] } : s))
         .map((s, i) => (spec.targets[String(i)] && s.sel ? { ...s, sel: { ...s.sel, labelHas: spec.targets[String(i)], templated: true } } : s))
-        .filter((st, i) => i === 0 || KEEP.has(st.op) || !spec.drop.has(i));
+        .filter((st, i) => i === 0 || KEEP.has(st.op) || st.item || !spec.drop.has(i));
       const manifest = { ...manifestFor(program), app: trace[0]?.pkg };
-      const { drop, drop_steps, typed, targets, ...clean } = spec;
+      const { drop, drop_steps, typed, targets, repeat_step, ...clean } = spec;
+      clean.repeat = repeatAt >= 0;
       if (!expect) {
         // Nothing was shown as proof (the run stopped before an irreversible step), so check the effect instead.
         // If it typed something, the proof is that text showing outside the field, sent (a message, a comment).
@@ -139,7 +149,8 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
         clean.expect = '';
         const typed = [...program].reverse().find(st => st.op === 'type' && st.text);
         const chosen = program.find(st => st.sel?.templated);
-        if (typed) clean.sent = typed.text;
+        if (clean.repeat) { /* checked by the loop: no item left */ }
+        else if (typed) clean.sent = typed.text;
         else if (chosen) clean.gone = chosen.sel.labelHas;
       }
       return { ...clean, name: previous?.name || spec.name, steps: program, manifest };

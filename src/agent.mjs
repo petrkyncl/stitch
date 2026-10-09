@@ -1,7 +1,7 @@
 // The Frankenstein loop: find a capability or notice the gap, build it, test it, install it, reuse it, repair it.
-import { Meter, askJSON, askTool } from './llm.mjs';
+import { Meter, askJSON, askTool, LIMITS } from './llm.mjs';
 import { explore } from './explorer.mjs';
-import { compile } from './compiler.mjs';
+import { compile, matchPatterns } from './compiler.mjs';
 import { run } from './runner.mjs';
 import { review, GRANTED } from './policy.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -21,7 +21,20 @@ const SPLIT = {
   description: 'The tasks in the request, in order.',
   parameters: {
     type: 'object',
-    properties: { tasks: { type: 'array', items: { type: 'string' }, description: 'e.g. ["Send Jan a WhatsApp message saying hi", "Go home"]' } },
+    properties: {
+      tasks: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            task: { type: 'string', description: 'One task in the words of the request. If it uses what the task before it returns, write the literal placeholder {{previous}} exactly where that goes, e.g. "Send Ann a WhatsApp message saying {{previous}}"' },
+            uses_previous: { type: 'boolean', description: 'true when this task needs what the task before it returns (an answer, a found place)' },
+            returns_result: { type: 'boolean', description: 'true when a later task uses what this task gets back' },
+          },
+          required: ['task', 'uses_previous', 'returns_result'],
+        },
+      },
+    },
     required: ['tasks'],
   },
 };
@@ -131,7 +144,14 @@ export class Agent {
       if (capability && !direct) throw new Error(`No installed capability ${capability}`);
       const tasks = direct ? [task] : await this.split(task, meter, emit);
       const results = [];
-      for (const [i, one] of tasks.entries()) {
+      for (let [i, one] of tasks.entries()) {
+        // Capabilities compose: what the previous task got back fills {{previous}} in this one.
+        if (one.includes('{{previous}}')) {
+          const prev = results.at(-1);
+          const value = prev?.reply || (prev?.data?.length ? Object.values(prev.data[0]).join(', ') : '');
+          if (!value) throw new Error(`Task ${i + 1} needs the result of task ${i}, which returned nothing`);
+          one = one.replaceAll('{{previous}}', value.replace(/\s*\n\s*/g, ' ').slice(0, 500));
+        }
         if (tasks.length > 1) emit('step', { kind: 'plan', text: `Task ${i + 1} of ${tasks.length}: ${one}` });
         const res = direct
           ? await this.useExisting({ cap: direct, params: { ...Object.fromEntries((direct.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default])), ...params } }, one, meter, emit)
@@ -180,12 +200,21 @@ export class Agent {
 
   // One small model call, only when the request has a connective like "and then".
   async split(task, meter, emit) {
-    if (!/\b(and then|then|after that|afterwards|a pak|potom)\b/i.test(task)) return [task];
+    if (!/\b(and|then|after that|afterwards|a pak|potom)\b/i.test(task)) return [task];
+    // A request one capability already covers is not split (free, and keeps reuse at zero model calls).
+    await this.registry.load();
+    if (this.registry.match(task)) return [task];
     const out = await askTool(meter,
       'Split a phone request into the separate tasks it asks for, in order. Keep the words of the request and make each task ' +
       'complete on its own (repeat the app or person if needed). The text of a message is never split. A single task stays alone.',
       `Request, quoted: "${task}"`, SPLIT);
-    const tasks = Array.isArray(out.tasks) ? out.tasks.map(String).map(t => t.trim()).filter(Boolean).slice(0, 5) : [];
+    // A task whose result a later one uses asks for that result back; a task that uses it gets the placeholder.
+    const tasks = (Array.isArray(out.tasks) ? out.tasks : []).slice(0, 5).map(t => {
+      let text = String(typeof t === 'string' ? t : t?.task || '').trim();
+      if (t?.returns_result && !/give me the (result|answer)/i.test(text)) text += ' and give me the result';
+      if (t?.uses_previous && !text.includes('{{previous}}')) text += ': {{previous}}';
+      return text;
+    }).filter(Boolean);
     if (tasks.length < 2) return [task];
     emit('step', { kind: 'plan', text: `Split into ${tasks.length} tasks: ${tasks.map(t => `"${t}"`).join(', ')}` });
     return tasks;
@@ -257,9 +286,10 @@ export class Agent {
     if (explored.held) {
       // The repaired program ends in a send: it cannot be tested for real, so save it held and finish the request
       // with it, asking at the send.
-      const fixed = await this.install(next, cap, `repaired after: ${res.reason}`, { passed: 0, total: 0 });
+      const values = { ...params, ...(matchPatterns(next.patterns, task) || {}) };
+      const fixed = await this.dryRunAndInstall(next, values, meter, emit, cap, `repaired after: ${res.reason}`);
       const from = Math.max(fixed.steps.findLastIndex(s => s.external), 0);
-      const done = await this.useExisting({ cap: fixed, params: this.registry.match(task)?.params || params }, task, meter, emit, { repair: false, from, pkg: explored.heldIn });
+      const done = await this.useExisting({ cap: fixed, params: values }, task, meter, emit, { repair: false, from, pkg: explored.heldIn });
       return { ...done, path: done.ok ? 'repaired' : done.path };
     }
     const installed = await this.testAndInstall(next, meter, emit, cap, `repaired after: ${res.reason}`);
@@ -272,17 +302,35 @@ export class Agent {
     emit('compile', { text: 'Writing the capability from what just worked' });
     const spec = await compile({ task, ...explored, meter, emit });
     if (explored.held) {
-      const cap = await this.install(spec, null, 'learned, stopped before an external action', { passed: 0, total: 0 });
-      // The capability is written but held. Ask now, and if allowed, finish the request with it as code.
-      const hit = this.registry.match(task);
-      if (hit?.cap.name !== cap.name) return { path: 'held', ok: false, capability: `${cap.name} v${cap.version}` };
-      // Finish right where exploring stopped: the screen is prepared, only the send is left.
+      // Test it with a dry run up to the send, install it held, then finish the request on the prepared screen.
+      const defaults = Object.fromEntries((spec.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
+      const values = { ...defaults, ...(matchPatterns(spec.patterns, task) || {}) };
+      const cap = await this.dryRunAndInstall(spec, values, meter, emit, null, `learned from "${task}"`);
+      const hit = { cap, params: this.registry.match(task)?.params || values };
       const from = Math.max(cap.steps.findLastIndex(s => s.external), 0);
       const done = await this.useExisting(hit, task, meter, emit, { repair: false, from, pkg: explored.heldIn });
       return { ...done, path: done.ok ? 'learned' : done.path };
     }
     const cap = await this.testAndInstall(spec, meter, emit, null, `learned from "${task}"`);
     return { path: 'learned', ok: cap.status === 'installed', capability: `${cap.name} v${cap.version}`, data: explored.data };
+  }
+
+  // A capability that ends in a send, payment or delete is tested with a dry run: every step up to that one runs for
+  // real with the request's own values (never someone else's chat), and that step is left unpressed. It installs only
+  // if the dry run reached it with everything before it working.
+  async dryRunAndInstall(spec, params, meter, emit, previous, reason) {
+    const at = spec.steps.findLastIndex(s => s.external);
+    const label = spec.steps[at]?.label || 'the last step';
+    emit('test', { text: `Testing ${spec.name} with ${JSON.stringify(params)} up to "${label}", which the test does not press` });
+    const res = await run({ ...spec, version: 0 }, params, { emit, confirm: async () => false });
+    const ok = !!res.held && res.step === at;
+    const tests = { passed: ok ? 1 : 0, total: 1, dry: true, last: ok ? `pass: every step up to "${label}" worked; that step waits for a person` : `fail: ${res.reason}` };
+    if (!ok) {
+      emit('error', { text: `Test failed, not installing: ${res.reason}` });
+      throw new Error(`Test failed: ${res.reason}`);
+    }
+    emit('test', { text: `Test passed: everything up to "${label}" is ready on the phone` });
+    return this.install(spec, previous, reason, tests);
   }
 
   async testAndInstall(spec, meter, emit, previous, reason) {
@@ -396,6 +444,6 @@ export class Agent {
   }
 
   state() {
-    return { session: this.session, chat: this.chat, busy: this.busy, current: this.current, pending: this.pending || null, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
+    return { limits: LIMITS, session: this.session, chat: this.chat, busy: this.busy, current: this.current, pending: this.pending || null, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
   }
 }

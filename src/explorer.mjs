@@ -42,6 +42,8 @@ extract finishes the task. Use the number the request asks for as limit (default
 Use extract ONLY when the request asks for data, a list, a table or several items. A request to find, open or show
 one thing (e.g. "find coffee in Google Maps") is done when its results are on screen: answer done, never extract.
 Add "why" with a few words. Use only ids from the current screen. Prefer typing into inputs over tapping digits or spinners.
+A dial or wheel picker only shows some values (a clock face labels every 5 minutes): if it offers a keyboard or text
+input mode ("Switch to text input"), switch to it first and type the values, so any value works.
 To write into an input use "type" directly: it focuses the input by itself, so never tap an input first.
 Type only the text the request wants entered, in the request's own words, never the whole request and never reworded:
 for "prompt Claude to give me a joke" type exactly "give me a joke".
