@@ -2,74 +2,106 @@
 
 **The phone agent that grows new limbs, not new privileges.**
 
-Built from scratch on the night of October 8 to 9, 2026, for the Frankenstein track of the Agents 0.0.7 hackathon (Etnetera Core, Prague). The commit history starts at 20:44 that evening.
+Stitch drives real Android phones. Ask it for something it cannot do yet and it notices the gap, explores the app,
+writes the missing capability as a program, tests it, installs it in a versioned registry, and from then on runs it as
+code with **zero model calls**. When an app changes, it repairs the capability and installs the next version. Anything
+that sends, posts, pays, deletes or agrees to terms waits for a person, every time, unless that person chose otherwise
+for that one capability.
 
-Stitch drives a real Android phone. When you ask for something it cannot do yet, it notices the gap, explores the app with a model, writes the missing capability as code, tests it with a different input, installs it, and from then on runs it **as plain code with zero model calls**. When an app update breaks a capability, it repairs it and installs the next version. Anything that sends, posts, pays or deletes is held until a person approves it.
+Built from scratch on the night of October 8 to 9, 2026, for the Frankenstein case of Agents 0.0.7 (Etnetera, Prague).
+The first commit is from 20:44. The brief is in [docs/hackathon-brief.md](docs/hackathon-brief.md).
 
-## The Frankenstein loop
+## The loop, against the brief
 
 | Brief | What Stitch does |
 |---|---|
-| **Gap found** | The request matches no installed capability, so Stitch says so and starts building. |
-| **Built** | The model explores the app screen by screen (accessibility tree, not screenshots). The trace is compiled into a parameterized program: steps with stable selectors, templates like `{{hour\|pad2}}:{{minute}}`, trigger patterns and a success check. |
-| **Tested** | The program runs again with a **different input** and must show its result on screen. No passing test, no install. |
-| **Installed** | Code, test result and a permission manifest go into `registry/<name>/`, every version kept. |
-| **Reused** | A new session starts with empty memory, loads the registry from disk and runs the capability as code. |
-| **Evolved** | When a step no longer finds its element, Stitch explores again from the same app, recompiles, retests and installs v2. |
-| **Authority does not grow** | The agent starts with `read_screen, tap, type` and effect `local`. A capability whose step sends, posts, pays or deletes is saved as **held**; it runs only after a person approves it. After an irreversible step, Stitch never retries or re-explores on its own. |
+| **Gap detection** | A request matches no installed capability (checked by the capabilities' own patterns, no model call), so Stitch says so and starts building. The gap always comes from a request; nothing is pre-written. |
+| **Create** | A model explores the app screen by screen through the accessibility tree (no screenshots), then a compiler turns the trace into a parameterized program: steps with stable selectors, templates like `{{hour}}`, trigger patterns, the app it needs and a permission manifest. |
+| **Test** | Before install, the program runs on the device with a **different input** and must show its result on screen. A program that ends in a send or delete gets a **dry run** with the request's own values up to that step, which the test does not press. No passing test, no install. The test is in the run log. |
+| **Install** | Code, test result and manifest go to `registry/<name>/`, every version kept (`v1.json`, `v2.json`). |
+| **Reuse** | Every later request with any input runs the program as code: 0 model calls, $0. A **new chat is a fresh session** that only has what is on disk. |
+| **Evolve** | When a step no longer finds its element, Stitch explores again from that app, recompiles, retests and installs v2. A person can roll back to any earlier version. |
+| **Authority does not grow** | The agent starts with `read_screen, tap, type` and the effect `local`. A step that sends, posts, pays, deletes or agrees (by its label, or by what the model says the step is for) is never pressed by the agent on its own: it stops right before it, with everything else ready on screen, and asks. "Always allow" applies to that one capability and can be revoked. |
 
-## Measured on a real phone (Samsung Galaxy, Android 16)
+**Composition in a fresh session.** "Ask Claude for a short poem and send it to Petr on WhatsApp" is split into two
+tasks, each run by its own installed capability, and the answer read back from the Claude app fills the WhatsApp
+message. "Delete all alarms" turns a program learned on one alarm into a loop that repeats while one is left.
 
-| Capability | Learning (first run) | Reuse as code |
+**Discovery and management tooling.** The studio lists every capability with its app, inputs, test result, versions,
+permission switch and rollback. The same registry is served as an **MCP server** (`npm run mcp`): every capability
+Stitch learns becomes a tool other agents can call, and the tool list updates while it learns. Every failed run has a
+one-click report (steps with times, the model's raw decisions, the program, the screen), also saved to `runs/reports/`.
+
+**Learn once, run everywhere.** With several emulators, a request goes to one first. If it has to learn, only that
+one learns, and the others run the new capability as code once it works.
+
+## Hard rules
+
+| Rule | How |
+|---|---|
+| Generated code runs in a sandbox, never on a host holding credentials | A capability is **data**, not code: a list of steps (`tap`, `type`, `find`, `extract`...) run by a fixed interpreter. Nothing the model writes is executed on the computer, which holds the API key. The only model-written text that is evaluated is the trigger patterns, as regular expressions. The emulators are the sandbox for learning; the personal phone is guarded by the approval gate. |
+| No install without passing tests, test run visible | `testAndInstall` and `dryRunAndInstall` in `src/agent.mjs`; every test step is in the chat log and the report. |
+| The gap comes from a task | Learning starts only when a request matches nothing. The registry is empty at the start of a demo. |
+| Self-iterations and spend capped in code | Per run: 40 model calls and $0.50 (`MAX_CALLS_PER_RUN`, `MAX_SPEND_PER_RUN`, checked before every call), 18 exploring steps, 3 compile attempts, 100 rounds of a loop. `test/limits.test.mjs`. |
+
+## Measured on real devices
+
+Samsung Galaxy (Android 16) over USB, and six Pixel emulators (Android 17). Learning explores with Claude Sonnet 5.5,
+everything else uses Claude Haiku 5.5; costs are at API list prices.
+
+| Capability | Learning (first time) | Reuse as code |
 |---|---|---|
-| `clock.set_alarm(hour, minute)` | 25.3 s, 11 model calls, $0.0054 | 3.7 s average over 3 runs, **0 calls, $0** |
-| `maps.search_place(query)` | 19.9 s, 9 calls, $0.0041 | 1.8 s average over 3 runs, **0 calls, $0** |
-| `maps.search_place` v2 (repair after a simulated app update) | 19.4 s, 6 calls, $0.0025 | 1.8 s, **0 calls** |
-| `clock.delete_alarm(time)` | learned up to the Delete tap, then **held** | after Approve: 6.4 s, **0 calls**, verified the alarm is gone |
+| Set an alarm (Samsung Clock) | 24.6 s, 8 calls, $0.053 | about 5 s, **0 calls, $0** |
+| Set an alarm (Google Clock, emulator 1) | 24.2 s, 8 calls, $0.052 | the other five emulators: 3.6 to 4.4 s each, **0 calls, $0** |
+| Send a WhatsApp message (asks at Send) | 18.7 s, 6 calls | about 6 s, **0 calls** |
+| Ask Claude in its app and read the answer | 14.6 s, 6 calls | 6.1 s, **0 calls, $0**, the answer shown in the chat |
+| Search Google Maps, repaired after the screen changed | v2 in 31.2 s, 5 calls, $0.042 | as code again |
+| Read YouTube Studio metrics into a table | 16.9 s, 5 calls | as code |
 
-Model: Claude Haiku 5.5 (costs at API list price, $0.10 / $0.50 per million tokens). Data extraction: 15 places from a lazy-loading Google Maps list in 5 s; the model writes the field rules once (1 call), collection and scrolling are code.
-
-**Honest numbers.** 27 tasks ran on the phone tonight: 10 succeeded, 16 failed, 1 was held. Almost all failures happened while the loop was being built (a small model drifting from the JSON format, regex dialects, missing zero padding, a long list it could not search). Each failure led to a fix that is in the history: forced tool calls, a `find` action, pattern normalization, automatic padding repair. The offline tests (`npm test`, 11 tests) cover the compiler, pattern dialects, extraction rules and the authority policy using data recorded from the phone.
+**Honest totals for the night** (all devices): 179 runs, 92 succeeded, 87 did not; 33 capabilities learned, 4
+repaired, 22 held at a send or delete; 52 of 55 reuses ran with zero model calls; $2.07 and 1,170 model calls in total.
+Most failures happened while the loop was being built; each one led to a fix in the history.
 
 ## How it works
 
-```mermaid
-flowchart LR
-  U[Request] --> R{Pattern match?}
-  R -- yes, 0 calls --> RUN[Runner: capability as code]
-  R -- no --> X[Explorer: model + phone]
-  X --> C[Compiler: trace to program + test + manifest]
-  C --> T{Test with new input}
-  T -- pass --> P{Policy}
-  P -- local --> I[Installed]
-  P -- sends / pays / deletes --> H[Held for approval]
-  RUN -- element missing --> X
-  I --> RUN
-```
-
-- **Hands** (`hands/`, Kotlin): an accessibility service plus its own keyboard (IME) on the phone, reached over `adb forward`. It reads the screen in about 20 ms (a `uiautomator` dump takes about 2.5 s), taps and long-presses through accessibility actions, types like a keyboard and submits with the field's own action. It also lists installed apps by the names people see.
-- **Engine** (`src/`, Node): explorer, compiler, runner, registry, policy, extraction, live MJPEG video of the phone (scrcpy server to ffmpeg) and a JSON + server-sent-events API.
-- **Studio** (`studio/`, Next.js 16 + Tailwind 4): chat with the agent, live phone you can tap and swipe with the mouse, a filmstrip of what the phone showed at each step, learning vs reuse costs, the capability registry with Approve and Simulate app update, and data tables with CSV download.
-
-The model never sees screenshots. It gets the accessibility tree as short lines such as `46 button "Add alarm" #menu_alarm_add` and answers through a forced function call, so its output always has the expected shape.
+- **Hands** (`hands/`, Kotlin): an accessibility service and its own keyboard on the phone. It reads the screen in about
+  20 ms, taps, holds, types, opens apps, scrolls with gestures, and draws live boxes around the elements the agent sees
+  (a switch in the studio). ADB is only the cable and the video.
+- **Engine** (`src/`, Node): explorer, compiler, runner, registry, policy, extraction, a JSON and server-sent events API,
+  live video (scrcpy server to ffmpeg). One engine per device; the emulators share one registry.
+- **Studio** (`studio/`, Next.js 16 + Tailwind 4): chats, the live phone or a grid of emulators, step screenshots,
+  the permission prompt, data tables with CSV, the capability registry with versions, permissions and rollback.
+- **MCP server** (`mcp/server.mjs`): `phone_do` plus one tool per learned capability.
 
 ## Run it
 
 ```bash
-# phone connected over USB with USB debugging on
-ADB=/path/to/adb hands/install.sh          # build, install and enable Hands and its keyboard
-cp .env.example .env                       # model endpoint and key, ADB path, serial
-node --env-file-if-exists=.env src/server.mjs
-cd studio && npm install && npm run dev     # http://localhost:3400
-npm test                                    # offline tests
+ADB=/path/to/adb hands/install.sh      # build, install and enable Hands and its keyboard on the USB phone
+cp .env.example .env                   # model endpoint and key, ADB path, serial
+npm install && npm start               # engine on :4400
+cd studio && npm install && npm run dev  # studio on http://localhost:3400
+scripts/emulators.sh up 6              # optional: six emulators with their own engines
+npm test                               # offline tests
 ```
 
-`hands/restore-keyboard.sh` switches the phone back to the keyboard it had before.
+`hands/restore-keyboard.sh` puts the phone's own keyboard back.
 
-## Limits
+## What is simulated, missing or fragile
 
-- One phone, one task at a time. Samsung apps were the main test bed.
-- Elements are found by resource id and stable label text. Apps that draw everything in one view (games, some web views) are out of reach.
-- Data extraction expects a list of rows with readable text; images are ignored.
+- **"Simulate app update"** on a capability card renames one of its selectors to show the repair; it does not install an
+  app update. Repairs after real screen changes also happened tonight (Google Maps above).
+- **Google Clock on the emulators** sets times on its dial, which only labels every fifth minute: 6:20 and 6:35 work,
+  6:43 does not. Its keyboard mode confused the model (two fields with the same id). Samsung Clock takes any time.
+- **"Delete all"** deleted six alarms in a row; on the last one the card did not open selection mode twice and the run
+  stopped. It now retries once and then reports how many it did.
+- **Composition** passes the previous task's answer or first table row to the next task; longer chains and branching
+  are not built.
+- **Reading an app's answer** takes the longest new block of text after the send; it works for chat apps, not for
+  every screen.
+- Exploring with Haiku alone took detours (searching for a chat that was already on screen, looping); the stronger
+  model fixed that for learning, which is a one-time cost per capability.
+- One task at a time per device. Elements are found by resource id and stable label text; apps that draw everything in
+  one view (games, some web views) are out of reach. Tested on Samsung and Pixel images only.
+- No voice (ElevenLabs) was built.
 
 Built with Claude Code by Petr Kynčl (MationX).
