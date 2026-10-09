@@ -88,6 +88,21 @@ npm test                               # offline tests
 
 `hands/restore-keyboard.sh` puts the phone's own keyboard back.
 
+### Use the skills from Claude (MCP)
+
+With the engine running (`npm start`), add Stitch as an MCP server. Every capability it has learned becomes a tool
+(`clock_set_alarm`, `whatsapp_send_message`, ...), plus `phone_do` for anything new, which Stitch then learns.
+
+```bash
+claude mcp add stitch -- node /path/to/stitch/mcp/server.mjs
+```
+
+Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{ "mcpServers": { "stitch": { "command": "node", "args": ["/path/to/stitch/mcp/server.mjs"] } } }
+```
+
 ## What is simulated, missing or fragile
 
 - **Finding the finishing step** relies on the model marking it, backed by a check on save-like labels (Save, Done,
