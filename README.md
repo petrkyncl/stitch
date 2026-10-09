@@ -104,4 +104,9 @@ npm test                               # offline tests
   one view (games, some web views) are out of reach. Tested on Samsung and Pixel images only.
 - No voice (ElevenLabs) was built.
 
+## License
+
+All rights reserved. The code is public so it can be read and judged; it may not be used, copied or redistributed
+without written permission. See [LICENSE](LICENSE).
+
 Built with Claude Code by Petr Kynčl (MationX).
