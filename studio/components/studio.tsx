@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
-import { api, DEVICE, DEVICES } from "@/lib/engine";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { api, goTo, usePlace } from "@/lib/engine";
+import { DeviceBar } from "./device-bar";
+import { DeviceWall } from "./device-wall";
 import { useEngine } from "./use-engine";
 import { Chat } from "./chat";
 import { PhonePanel } from "./phone-panel";
@@ -16,6 +18,32 @@ const EXAMPLES = [
 ];
 
 export default function Studio() {
+  const { device, view } = usePlace();
+  if (view === "all") {
+    return (
+      <div className="flex h-full min-h-0 flex-col text-base">
+        <Header><DeviceBar /></Header>
+        <DeviceWall onOpen={id => goTo({ device: id, view: "one" })} />
+      </div>
+    );
+  }
+  // Keyed by device: switching starts a fresh workspace on that device's engine (its chat, state and live screen).
+  return <Workspace key={device.id} />;
+}
+
+function Header({ children }: { children: React.ReactNode }) {
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-dashed border-thread px-8 py-4">
+      <div className="flex items-baseline gap-4">
+        <span className="font-display text-5xl leading-none font-black uppercase">Stitch</span>
+        <span className="text-muted">grows new limbs, not new privileges</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 font-mono text-sm">{children}</div>
+    </header>
+  );
+}
+
+function Workspace() {
   const { state, live, device, offline, sessions, now, epoch, refresh } = useEngine();
   const [task, setTask] = useState("");
   const [app, setApp] = useState<string | null>(null);
@@ -53,22 +81,18 @@ export default function Studio() {
 
   return (
     <div className="flex h-full min-h-0 flex-col text-base">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-dashed border-thread px-8 py-4">
-        <div className="flex items-baseline gap-4">
-          <span className="font-display text-5xl leading-none font-black uppercase">Stitch</span>
-          <span className="text-muted">grows new limbs, not new privileges</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 font-mono text-sm">
-          <DevicePicker />
-          {offline && <Chip tone="bad">Engine offline</Chip>}
-          <Chip>Session {state?.session ?? 1}</Chip>
-          <Chip tone={state && !state.hasKey ? "bad" : undefined}>{state ? state.model : "model"}</Chip>
-          <button type="button" onClick={() => act("/api/session")} disabled={busy}
-            className="rounded-lg border border-line px-4 py-2 font-sans text-base font-medium hover:border-muted disabled:opacity-50">
-            New session
-          </button>
-        </div>
-      </header>
+      <Header>
+        <DeviceBar />
+        {offline && <Chip tone="bad">Engine offline</Chip>}
+        <Chip>Session {state?.session ?? 1}</Chip>
+        <Chip tone={state && !state.hasKey ? "bad" : undefined}>
+          {state ? (state.exploreModel && state.exploreModel !== state.model ? `learns with ${state.exploreModel}, runs on ${state.model}` : state.model) : "model"}
+        </Chip>
+        <button type="button" onClick={() => act("/api/session")} disabled={busy}
+          className="rounded-lg border border-line px-4 py-2 font-sans text-base font-medium hover:border-muted disabled:opacity-50">
+          New session
+        </button>
+      </Header>
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]">
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
@@ -101,7 +125,7 @@ export default function Studio() {
         </section>
 
         <section className="flex min-h-[640px] flex-col lg:min-h-0" aria-label="Phone">
-          <PhonePanel device={device} epoch={epoch} boxes={state?.boxes} />
+          <PhonePanel device={device} epoch={epoch} boxes={state?.boxes} offline={offline} />
         </section>
 
         <section className="min-h-0 overflow-y-auto lg:col-span-2 2xl:col-span-1" aria-label="Cost and capabilities">
@@ -146,19 +170,5 @@ function Examples({ onPick }: { onPick: (text: string) => void }) {
         </div>
       )}
     </div>
-  );
-}
-
-// Which device this tab drives. Switching reloads the page onto that device's engine; open tabs to watch several.
-function DevicePicker() {
-  const current = useSyncExternalStore(() => () => {}, () => DEVICE.id, () => "phone");
-  return (
-    <label className="flex items-center gap-2">
-      <span className="sr-only">Device</span>
-      <select value={current} onChange={e => { window.location.search = e.target.value === "phone" ? "" : `?d=${e.target.value}`; }}
-        className="rounded-lg border border-line bg-night-2 px-3 py-2 font-sans text-base hover:border-muted">
-        {DEVICES.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
-      </select>
-    </label>
   );
 }

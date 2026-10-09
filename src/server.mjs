@@ -4,10 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { Registry } from './registry.mjs';
 import { Agent } from './agent.mjs';
 import { screenshot, handsAvailable, deviceInfo, tapAt, swipeAt, globalAction, installedApps, appIcon, getLiveBoxes, setLiveBoxes } from './adb.mjs';
-import { model, provider, hasCredentials } from './llm.mjs';
+import { model, exploreModel, provider, hasCredentials } from './llm.mjs';
 import { serveStream } from './stream.mjs';
 
 const PORT = Number(process.env.PORT || 4400);
+const STARTED = Date.now();
 const clients = new Set();
 
 function emit(type, data) {
@@ -44,7 +45,7 @@ const server = http.createServer(async (req, res) => {
       req.on('close', () => clients.delete(res));
       return;
     }
-    if (url.pathname === '/api/state') return json(res, 200, { ...agent.state(), model, hands: await handsAvailable(), boxes: getLiveBoxes(), provider, hasKey: hasCredentials });
+    if (url.pathname === '/api/state') return json(res, 200, { ...agent.state(), model, hands: await handsAvailable(), boxes: getLiveBoxes(), exploreModel, provider, hasKey: hasCredentials });
     if (url.pathname === '/api/stream.mjpg') return serveStream(req, res);
     if (url.pathname === '/api/screen.png') {
       const png = await screenshot();
@@ -77,7 +78,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
       return res.end(png);
     }
-    if (url.pathname === '/api/device') return json(res, 200, await deviceInfo());
+    // `started` lets a viewer notice an engine restart and reopen its video.
+    if (url.pathname === '/api/device') return json(res, 200, { ...(await deviceInfo()), started: STARTED });
     if (req.method === 'POST' && url.pathname === '/api/input') {
       // Coordinates arrive normalized (0..1) from the video, so the studio never needs the phone's resolution.
       const b = await body(req);

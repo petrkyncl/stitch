@@ -1,6 +1,7 @@
 // Thin ADB bridge: read the UI tree, tap, type, launch apps, take screenshots.
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const ADB = process.env.ADB || 'adb';
 const SERIAL = process.env.ANDROID_SERIAL || '';
@@ -106,6 +107,7 @@ async function observeHands(pkg = '') {
           cx: Math.round((x1 + x2) / 2), cy: Math.round((y1 + y2) / 2),
         };
       });
+      nameRows(nodes);
       return { nodes, pkg: d.pkg, at: Date.now(), via: 'hands' };
     } catch (e) {
       if (i === 4) throw e;
@@ -114,6 +116,18 @@ async function observeHands(pkg = '') {
       if (pkg && i >= 2 && /no active window/.test(e.message)) pkg = '';
       await sleep(120);
     }
+  }
+}
+
+// A row you can tap often has no label of its own; its name is a text inside it (a WhatsApp chat row, a video card).
+// Give such an element the first text it contains (not counting texts of buttons nested in it), so the agent sees
+// "Petr Kynčl (You)" instead of an empty button, and selectors and the overlay can name it.
+function nameRows(nodes) {
+  const inside = (o, i) => i !== o && i.bounds[0] >= o.bounds[0] && i.bounds[1] >= o.bounds[1] && i.bounds[2] <= o.bounds[2] && i.bounds[3] <= o.bounds[3];
+  for (const n of nodes) {
+    if (!n.clickable || n.editable || n.text || n.desc) continue;
+    const texts = nodes.filter(t => !t.clickable && t.text && inside(n, t)).sort((a, b) => a.bounds[1] - b.bounds[1] || a.bounds[0] - b.bounds[0]);
+    if (texts.length) { n.desc = texts[0].text.slice(0, 80); n.named = true; }
   }
 }
 
@@ -211,10 +225,16 @@ export async function returnToTabs(pkg, tabs) {
 
 // Live boxes around the elements of the app in front, drawn by Hands as the screen changes (switch in the studio,
 // on by default, OVERLAY=0 starts with them off), and a bold box around the element the agent is about to use.
-let liveBoxes = process.env.OVERLAY !== '0';
+// The switch is saved, so an engine restart does not turn back on boxes the person turned off.
+const SETTINGS = 'runs/settings.json';
+let liveBoxes = (() => {
+  try { const saved = JSON.parse(readFileSync(SETTINGS, 'utf8')); if (typeof saved.boxes === 'boolean') return saved.boxes; } catch { /* first start */ }
+  return process.env.OVERLAY !== '0';
+})();
 export const getLiveBoxes = () => liveBoxes;
 export async function setLiveBoxes(on) {
   liveBoxes = !!on;
+  try { mkdirSync('runs', { recursive: true }); writeFileSync(SETTINGS, JSON.stringify({ boxes: liveBoxes })); } catch { /* kept in memory */ }
   if (await handsAvailable()) await hands('/overlay', { live: liveBoxes });
   return liveBoxes;
 }

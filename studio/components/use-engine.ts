@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ENGINE, type Device, type EngineEvent, type EngineState, type MeterSnapshot, type Run } from "@/lib/engine";
+import { api, engineUrl, type Device, type EngineEvent, type EngineState, type MeterSnapshot, type Run } from "@/lib/engine";
 
 const EMPTY: MeterSnapshot = { calls: 0, tokensIn: 0, tokensOut: 0, cost: 0, ms: 0 };
 
@@ -41,7 +41,7 @@ export function useEngine() {
     let retry: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
     const connect = () => {
-      es = new EventSource(ENGINE + "/api/events");
+      es = new EventSource(engineUrl() + "/api/events");
       es.onopen = () => { setOffline(false); setEpoch(e => e + 1); refresh(); };
       es.onerror = () => {
         setOffline(true);

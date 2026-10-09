@@ -207,7 +207,8 @@ export function validate(spec, task, trace, expect) {
       else if (fold(padTimes(render(t, got))) !== fold(padTimes(s.text))) problems.push(`step ${i} renders "${render(t, got)}" but the trace typed "${s.text}"`);
     });
     // A param no step uses is a request the program ignores, e.g. a message it never types.
-    const used = JSON.stringify([spec.typed, spec.targets, spec.expect]);
+    // Only steps count: a held capability throws its success text away, so a param used only there does nothing.
+    const used = JSON.stringify([spec.typed, spec.targets, expect ? spec.expect : '']);
     for (const p of params) if (!used.includes(`{{${p}`)) problems.push(`param "${p}" is not used by any step; type it, target it, or remove it`);
     if (expect && spec.expect) {
       const fixed = autofix(spec.expect, got, expect, true);

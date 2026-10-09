@@ -1,10 +1,12 @@
 "use client";
 
 import { useRef, useState, type PointerEvent } from "react";
-import { api, VIDEO, type Device } from "@/lib/engine";
+import { api, usePlace, videoUrl, type Device } from "@/lib/engine";
+import { LiveScreen } from "./live-screen";
 
 // Live phone video you can drive with the mouse: click = tap, drag = swipe.
-export function PhonePanel({ device, epoch, boxes }: { device: Device | null; epoch: number; boxes?: boolean }) {
+export function PhonePanel({ device, epoch, boxes, offline }: { device: Device | null; epoch: number; boxes?: boolean; offline?: boolean }) {
+  const { device: def } = usePlace();
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   const w = device?.width || 1080;
   const h = device?.height || 2340;
@@ -33,14 +35,13 @@ export function PhonePanel({ device, epoch, boxes }: { device: Device | null; ep
         <div
           onPointerDown={down}
           onPointerUp={up}
-          className="w-full max-w-[460px] shrink-0 cursor-pointer touch-none overflow-hidden rounded-[18px] border-2 border-line bg-black select-none 2xl:h-full 2xl:w-auto 2xl:max-w-full"
+          className="relative w-full max-w-[460px] shrink-0 cursor-pointer touch-none overflow-hidden rounded-[18px] border-2 border-line bg-black select-none 2xl:h-full 2xl:w-auto 2xl:max-w-full"
           style={{ aspectRatio: `${w} / ${h}` }}
           title="Click to tap, drag to swipe"
         >
-        {/* An MJPEG stream; next/image cannot optimize or proxy a never-ending response. */}
-        {/* The prerender only knows the phone; a tab on an emulator swaps the src once the engine connects. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img suppressHydrationWarning src={`${VIDEO}?c=${epoch}`} alt="Live phone screen" draggable={false} className="pointer-events-none block size-full object-cover" />
+        {/* The stream starts once the engine answers (epoch > 0), and restarts after an engine restart. */}
+        <LiveScreen src={epoch > 0 && !offline ? `${videoUrl(def)}?c=${epoch}` : null} label={def.label} offline={offline}
+          hint={def.id === "phone" ? "npm start" : "scripts/emulators.sh up"} />
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
@@ -66,7 +67,7 @@ function NavButton({ label, onClick, d }: { label: string; onClick: () => void; 
 function Status({ device }: { device: Device | null }) {
   if (!device) return <div className="h-7" />;
   if (!device.connected) {
-    return <div className="flex items-center gap-2 rounded-full border border-thread px-3 py-1 font-mono text-sm text-thread"><Dot ok={false} /> No phone connected over ADB</div>;
+    return <div className="flex items-center gap-2 rounded-full border border-thread px-3 py-1 font-mono text-sm text-thread"><Dot ok={false} /> Not connected over ADB</div>;
   }
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 font-mono text-xs">

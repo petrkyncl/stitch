@@ -76,7 +76,9 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
     }
 
     const sel = s.sel?.templated ? { ...s.sel, labelHas: padTimes(render(s.sel.labelHas, params)) } : s.sel;
-    const node = await waitFor(sel, pkg, justLaunched ? 6000 : 4000);
+    let node = await waitFor(sel, pkg, justLaunched ? 6000 : 4000);
+    // The row the input picks (a contact, an alarm) may sit further down the list: look through it before giving up.
+    if (!node && sel.templated && sel.labelHas && await phone.findText(sel.labelHas, pkg)) node = await waitFor(sel, pkg, 1000);
     justLaunched = false;
     if (!node) {
       // A one-time dialog (terms, a tip) that was there while learning and is not now: skip it when the next step's

@@ -8,21 +8,32 @@ const IS_OPENAI = BASE.includes('api.openai.com');
 // Priced at the provider's public API list price, so runs are comparable even on a subscription.
 const PRICE_IN = Number(process.env.PRICE_IN || 0.25);
 const PRICE_OUT = Number(process.env.PRICE_OUT || 2);
+// Exploring an app (the decisions while learning) may use a stronger model; it runs once per capability, reuse is free.
+const EXPLORE_MODEL = process.env.LLM_EXPLORE_MODEL || MODEL;
+const PRICES = {
+  [MODEL]: [PRICE_IN, PRICE_OUT],
+  [EXPLORE_MODEL]: EXPLORE_MODEL === MODEL ? [PRICE_IN, PRICE_OUT] : [Number(process.env.EXPLORE_PRICE_IN || 2), Number(process.env.EXPLORE_PRICE_OUT || 10)],
+};
 
 export const model = MODEL;
+export const exploreModel = EXPLORE_MODEL;
 export const provider = IS_OPENAI ? 'openai' : BASE;
 export const hasCredentials = IS_OPENAI ? !!KEY : true;
 
 export class Meter {
   constructor() { this.reset(); }
-  reset() { this.calls = 0; this.tokensIn = 0; this.tokensOut = 0; this.started = Date.now(); }
-  add(usage, prompt, reply) {
+  reset() { this.calls = 0; this.tokensIn = 0; this.tokensOut = 0; this.dollars = 0; this.started = Date.now(); }
+  add(usage, prompt, reply, model = MODEL) {
     this.calls += 1;
     // Some local wrappers report no usage; estimate ~4 characters per token so the meter stays honest about scale.
-    this.tokensIn += usage?.prompt_tokens || Math.ceil(prompt.length / 4);
-    this.tokensOut += usage?.completion_tokens || Math.ceil(reply.length / 4);
+    const tin = usage?.prompt_tokens || Math.ceil(prompt.length / 4);
+    const tout = usage?.completion_tokens || Math.ceil(reply.length / 4);
+    this.tokensIn += tin;
+    this.tokensOut += tout;
+    const [pin, pout] = PRICES[model] || [PRICE_IN, PRICE_OUT];
+    this.dollars += (tin * pin + tout * pout) / 1e6; // each call at its own model's price
   }
-  get cost() { return (this.tokensIn * PRICE_IN + this.tokensOut * PRICE_OUT) / 1e6; }
+  get cost() { return this.dollars; }
   snapshot() {
     return { calls: this.calls, tokensIn: this.tokensIn, tokensOut: this.tokensOut, cost: this.cost, ms: Date.now() - this.started };
   }
@@ -90,20 +101,31 @@ async function post(body) {
   throw lastErr;
 }
 
+const noForcedTools = new Set();
+
 // Forced tool call: the model must answer through one function with a JSON schema. Far stricter than "reply with JSON".
-export async function askTool(meter, system, user, tool) {
+export async function askTool(meter, system, user, tool, { model = MODEL } = {}) {
   if (!hasCredentials) throw new Error('No API key. Set OPENAI_API_KEY in .env, or point LLM_BASE_URL at a local wrapper.');
   const body = {
-    model: MODEL,
+    model,
     messages: [{ role: 'system', content: `${ROLE}\n\n${system}` }, { role: 'user', content: user }],
     tools: [{ type: 'function', function: tool }],
-    tool_choice: { type: 'function', function: { name: tool.name } },
+    tool_choice: noForcedTools.has(model) ? 'auto' : { type: 'function', function: { name: tool.name } },
   };
+  if (noForcedTools.has(model)) body.messages[0].content += `\n\nAnswer only by calling the ${tool.name} function.`;
   if (IS_OPENAI && REASONING) body.reasoning_effort = REASONING;
-  const data = await post(body);
+  let data;
+  try {
+    data = await post(body);
+  } catch (e) {
+    // Some models (Sonnet with thinking) refuse a forced tool; ask again letting it choose, and remember that.
+    if (!/tool_choice/i.test(e.message) || noForcedTools.has(model)) throw e;
+    noForcedTools.add(model);
+    return askTool(meter, system, user, tool, { model });
+  }
   const msg = data.choices?.[0]?.message || {};
   const args = msg.tool_calls?.[0]?.function?.arguments;
-  meter.add(data.usage, system + user, args || msg.content || '');
+  meter.add(data.usage, system + user, args || msg.content || '', model);
   if (args) return typeof args === 'string' ? JSON.parse(args) : args;
   return extractJSON(msg.content || ''); // a provider without tool support still gets a chance
 }

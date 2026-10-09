@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ENGINE, money, secs, type Capability, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
+import { engineUrl, money, secs, type Capability, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
 import { AppIcon } from "./app-picker";
 
 type Turn = { kind: "run"; run: Run; live: boolean } | { kind: "session"; session: number; at: number; capabilities: number };
@@ -191,7 +191,7 @@ function Filmstrip({ events, live }: { events: RunEvent[]; live: boolean }) {
           <button key={e.frame} type="button" onClick={() => setOpen(i)} title={e.text}
             className="group relative shrink-0 overflow-hidden rounded-lg border border-line hover:border-dawn">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={ENGINE + e.frame} alt={e.text || "step"} loading="lazy" className="h-36 w-auto object-cover" />
+            <img src={engineUrl() + e.frame} alt={e.text || "step"} loading="lazy" className="h-36 w-auto object-cover" />
             <span className="absolute inset-x-0 bottom-0 bg-night/85 px-1.5 py-0.5 font-mono text-[10px] text-flesh">{i + 1}</span>
           </button>
         ))}
@@ -203,7 +203,7 @@ function Filmstrip({ events, live }: { events: RunEvent[]; live: boolean }) {
               className="grid size-12 place-items-center rounded-full border border-line text-2xl disabled:opacity-30">&#8249;</button>
             <figure className="flex max-h-[90vh] flex-col items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={ENGINE + current.frame} alt={current.text || "step"} className="max-h-[80vh] w-auto rounded-2xl border border-line" />
+              <img src={engineUrl() + current.frame} alt={current.text || "step"} className="max-h-[80vh] w-auto rounded-2xl border border-line" />
               <figcaption className="max-w-xl text-center">
                 <span className="font-mono text-xs tracking-wider text-muted uppercase">Step {(open ?? 0) + 1} of {shots.length} · {current.kind || current.type}</span>
                 <p className="text-lg">{current.text}{current.why && <span className="text-muted"> · {current.why}</span>}</p>

@@ -95,9 +95,11 @@ function stop() {
 }
 
 function send(res, frame) {
-  res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+  res.write(`Content-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
   res.write(frame);
-  res.write('\r\n');
+  // Close the part with the next boundary at once: browsers draw a part only when they see the boundary after it,
+  // so on a still screen the first frame would otherwise wait until something on the phone changes.
+  res.write('\r\n--frame\r\n');
 }
 
 // The newest decoded frame, or null when nobody is watching (the stream only runs for viewers).
@@ -109,6 +111,7 @@ export function serveStream(req, res) {
     'Cache-Control': 'no-store',
     Connection: 'keep-alive',
   });
+  res.write('--frame\r\n');
   viewers.add(res);
   clearTimeout(idleTimer);
   if (lastFrame) send(res, lastFrame);

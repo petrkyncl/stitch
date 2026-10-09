@@ -61,7 +61,8 @@ export function findBySelector(nodes, sel) {
   const lc = fold;
   const matches = nodes.filter(n => {
     if (sel.resourceId && n.resourceId !== sel.resourceId) return false;
-    if (sel.labelHas && !lc(label(n)).includes(lc(sel.labelHas))) return false;
+    // Spaces do not count, as in the compiler: "@{{contact}}" with "petr kyncl" finds "@petrkyncl".
+    if (sel.labelHas && !lc(label(n)).replace(/\s+/g, '').includes(lc(sel.labelHas).replace(/\s+/g, ''))) return false;
     if (!sel.resourceId && !sel.labelHas) return false;
     return true;
   });

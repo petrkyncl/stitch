@@ -1,16 +1,56 @@
-// Client for the Stitch engine (the Node process that holds the phone).
-// Every device the studio can drive: the USB phone, plus the emulators scripts/emulators.sh starts, one engine each.
-export const DEVICES = [
+// Client for the Stitch engines: one Node process per device (the USB phone, and the emulators scripts/emulators.sh starts).
+import { useEffect, useState, useSyncExternalStore } from "react";
+
+export type DeviceDef = { id: string; label: string; port: number };
+
+export const DEVICES: DeviceDef[] = [
   { id: "phone", label: "Phone (USB)", port: 4400 },
   ...[1, 2, 3, 4].map(n => ({ id: `emu${n}`, label: `Emulator ${n}`, port: 4408 + 2 * n })),
 ];
-// Picked with ?d=emu2, so each tab can hold a different device. Read in the browser only; the prerender uses the phone.
-const picked = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("d");
-export const DEVICE = DEVICES.find(d => d.id === picked) ?? DEVICES[0];
-const isPhone = DEVICE.id === "phone";
-export const ENGINE = (isPhone && process.env.NEXT_PUBLIC_ENGINE) || `http://localhost:${DEVICE.port}`;
+
+// Where the studio is looking: one device, or all of them side by side. Kept in the URL (?d=emu2, ?v=all) so a reload
+// lands in the same place; switching never reloads the page. The prerender always shows the phone.
+export type View = "one" | "all";
+type Place = { device: DeviceDef; view: View };
+const PRERENDER: Place = { device: DEVICES[0], view: "one" };
+let place = PRERENDER;
+if (typeof window !== "undefined") {
+  const q = new URLSearchParams(window.location.search);
+  place = { device: DEVICES.find(d => d.id === q.get("d")) ?? DEVICES[0], view: q.get("v") === "all" ? "all" : "one" };
+}
+const listeners = new Set<() => void>();
+const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
+
+export function goTo(next: { device?: string; view?: View }) {
+  place = { device: DEVICES.find(d => d.id === next.device) ?? place.device, view: next.view ?? place.view };
+  const q = new URLSearchParams();
+  if (place.device.id !== "phone") q.set("d", place.device.id);
+  if (place.view === "all") q.set("v", "all");
+  window.history.replaceState(null, "", q.size ? `?${q}` : window.location.pathname);
+  listeners.forEach(l => l());
+}
+
+export const usePlace = () => useSyncExternalStore(subscribe, () => place, () => PRERENDER);
+
+export const engineUrl = (d: DeviceDef = place.device) => (d.id === "phone" && process.env.NEXT_PUBLIC_ENGINE) || `http://localhost:${d.port}`;
 // Video on its own host and port, so it never queues behind the event streams of other open tabs.
-export const VIDEO = (isPhone && process.env.NEXT_PUBLIC_VIDEO) || `http://127.0.0.1:${DEVICE.port + 1}/stream.mjpg`;
+export const videoUrl = (d: DeviceDef = place.device) => (d.id === "phone" && process.env.NEXT_PUBLIC_VIDEO) || `http://127.0.0.1:${d.port + 1}/stream.mjpg`;
+
+// A device's connection, polled every few seconds. `offline` means its engine is not running at all.
+export function useDeviceStatus(d: DeviceDef, enabled = true) {
+  const [status, setStatus] = useState<Device | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let stop = false;
+    const poll = () => fetch(engineUrl(d) + "/api/device", { signal: AbortSignal.timeout(4000) })
+      .then(r => r.json()).then((x: Device) => { if (!stop) setStatus(x); })
+      .catch(() => { if (!stop) setStatus({ connected: false, offline: true }); });
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => { stop = true; clearInterval(t); };
+  }, [d, enabled]);
+  return status;
+}
 
 export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number; cost: number; ms: number };
 
@@ -33,7 +73,7 @@ export type Run = MeterSnapshot & {
 
 export type App = { package: string; label: string; system?: boolean };
 
-export const iconUrl = (pkg: string) => `${ENGINE}/api/app-icon/${pkg}`;
+export const iconUrl = (pkg: string) => `${engineUrl()}/api/app-icon/${pkg}`;
 
 export type Capability = {
   name: string;
@@ -71,10 +111,13 @@ export type EngineState = {
   hands: boolean;
   hasKey: boolean;
   boxes?: boolean;
+  exploreModel?: string;
 };
 
 export type Device = {
   connected: boolean;
+  offline?: boolean;
+  started?: number;
   serial?: string;
   transport?: string;
   model?: string;
@@ -103,7 +146,7 @@ export type EngineEvent = {
 };
 
 export async function api<T = unknown>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(ENGINE + path, body === undefined ? {} : {
+  const res = await fetch(engineUrl() + path, body === undefined ? {} : {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
