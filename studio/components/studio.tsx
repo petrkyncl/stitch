@@ -196,7 +196,7 @@ function Workspace() {
         {/* The capabilities are shared by every device, so they are on the right in both places. */}
         <section className="min-h-0 overflow-y-auto lg:col-span-2 2xl:col-span-1" aria-label="Cost and capabilities">
           <Insights
-            runs={state?.runs ?? []}
+            runs={(state?.runs ?? []).filter(r => r.at >= (state?.resetAt ?? 0))}
             capabilities={state?.capabilities ?? []}
             granted={state?.granted}
             limits={state?.limits}

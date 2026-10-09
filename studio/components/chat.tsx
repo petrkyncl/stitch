@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, engineUrl, money, secs, type Capability, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
+import { api, engineUrl, exactMoney, money, secs, type Capability, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
 import { AppIcon } from "./app-picker";
 
 type Turn = { kind: "run"; run: Run; live: boolean } | { kind: "session"; session: number; at: number; capabilities: number };
@@ -76,6 +76,12 @@ function SessionMark({ session, capabilities }: { session: number; capabilities:
 
 function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boolean; now: number; ask?: Ask; capabilities: Capability[] }) {
   const waiting = live && ask?.pending;
+  // After you answer, the prompt stays, with a spinner on your choice, until the run reports what happened.
+  const [decided, setDecided] = useState<{ pending: Pending; choice: Decision; at: number } | null>(null);
+  const settled = !!decided && (!live || run.events.some(e => e.at > decided.at && ["done", "error", "blocked", "stopped", "answer"].includes(e.type)));
+  const prompt = waiting && ask?.pending ? { pending: ask.pending } : decided && !settled ? { pending: decided.pending } : null;
+  // A later prompt in the same run (Claude, then WhatsApp) is a new question, not the one already answered.
+  const answered = !!decided && !settled && (!waiting || ask?.pending?.action === decided.pending.action);
   const outcome = waiting ? { label: "Waiting for you", tone: "text-dawn border-dawn/60" } : OUTCOME[live ? "working" : run.path || "failed"];
   const elapsed = live ? now - run.at : run.ms;
   const proof = [...run.events].reverse().find(e => e.type === "done" || (e.type === "test" && /passed/i.test(e.text || "")));
@@ -101,7 +107,11 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
         {live && !waiting && run.events.length > 0 && (
           <p className="flex items-center gap-2 text-muted"><span className="size-1.5 shrink-0 animate-pulse rounded-full bg-dawn" />{run.events.at(-1)?.text}</p>
         )}
-        {waiting && ask?.pending && <Permission pending={ask.pending} onDecide={ask.onDecide} />}
+        {prompt && <Permission pending={prompt.pending} busy={answered ? decided?.choice : undefined} onDecide={d => {
+          if (!ask?.pending) return;
+          setDecided({ pending: ask.pending, choice: d, at: Date.now() });
+          ask.onDecide(d);
+        }} />}
         {!live && proof && <p className="text-ok">{proof.text}</p>}
         {(run.reply || (live && run.events.findLast(e => e.type === "answer")?.text)) && (
           <Answer text={run.reply || run.events.findLast(e => e.type === "answer")?.text || ""} name={run.task} />
@@ -112,7 +122,13 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
           <span className="tabular-nums text-flesh">{secs(elapsed)}</span>
           <span><span className={`tabular-nums ${!live && run.calls === 0 ? "text-ok" : "text-flesh"}`}>{run.calls ?? 0}</span> {run.calls === 1 ? "model call" : "model calls"}</span>
-          <span className={`tabular-nums ${!live && run.cost === 0 ? "text-ok" : "text-flesh"}`}>{money(run.cost)}</span>
+          <span title={exactMoney(run.cost)} className={`tabular-nums ${!live && run.cost === 0 ? "text-ok" : "text-flesh"}`}>{money(run.cost)}</span>
+          {/* What the money paid for: the model thinking (learning or planning). The taps and typing are free. */}
+          {run.parts && Object.keys(run.parts).length > 0 && (
+            <span className="text-muted">
+              {Object.entries(run.parts).map(([k, v]) => `${k} ${money(v.cost)}`).join(", ")}, actions on the phone $0
+            </span>
+          )}
           <span><span className="tabular-nums text-flesh">{((run.tokensIn ?? 0) + (run.tokensOut ?? 0)).toLocaleString()}</span> tokens</span>
           <span className="flex-1" />
           {!live && !run.ok && <Report id={run.id} />}
@@ -263,9 +279,9 @@ function DataTable({ rows, name }: { rows: Record<string, string>[]; name: strin
 
 // The agent runs up to the step that sends, pays or deletes and asks there, like Claude Code before a risky tool.
 // Its authority grows only here, by a person's choice, and only for this one capability.
-export function Permission({ pending, onDecide }: { pending: Pending; onDecide: (d: Decision) => void }) {
-  const [sent, setSent] = useState<Decision | null>(null);
-  const decide = (d: Decision) => { setSent(d); onDecide(d); };
+export function Permission({ pending, busy, onDecide }: { pending: Pending; busy?: Decision; onDecide: (d: Decision) => void }) {
+  const decide = (d: Decision) => { if (!busy) onDecide(d); };
+  const spin = (d: Decision) => busy === d && <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />;
   const values = Object.entries(pending.params || {});
   const action = pending.title.charAt(0).toLowerCase() + pending.title.slice(1);
   return (
@@ -282,9 +298,12 @@ export function Permission({ pending, onDecide }: { pending: Pending; onDecide: 
         </div>
       )}
       <div className="flex flex-wrap items-center gap-1.5">
-        <button type="button" disabled={!!sent} onClick={() => decide("once")} className="rounded-lg bg-dawn px-3 py-1 text-sm font-medium text-night disabled:opacity-50">Allow once</button>
-        <button type="button" disabled={!!sent} onClick={() => decide("always")} title={`Applies to ${pending.capability} only; revoke it from its card`} className="rounded-lg px-3 py-1 text-sm text-flesh hover:bg-night-3 disabled:opacity-50">Always allow</button>
-        <button type="button" disabled={!!sent} onClick={() => decide("deny")} className="rounded-lg px-3 py-1 text-sm text-muted hover:bg-night-3 hover:text-flesh disabled:opacity-50">Deny</button>
+        <button type="button" disabled={!!busy && busy !== "once"} aria-busy={busy === "once"} onClick={() => decide("once")}
+          className="flex items-center gap-2 rounded-lg bg-dawn px-3 py-1 text-sm font-medium text-night disabled:opacity-40">{spin("once")}Allow once</button>
+        <button type="button" disabled={!!busy && busy !== "always"} aria-busy={busy === "always"} onClick={() => decide("always")} title={`Applies to ${pending.capability} only; revoke it from its card`}
+          className="flex items-center gap-2 rounded-lg px-3 py-1 text-sm text-flesh hover:bg-night-3 disabled:opacity-40">{spin("always")}Always allow</button>
+        <button type="button" disabled={!!busy && busy !== "deny"} aria-busy={busy === "deny"} onClick={() => decide("deny")}
+          className="flex items-center gap-2 rounded-lg px-3 py-1 text-sm text-muted hover:bg-night-3 hover:text-flesh disabled:opacity-40">{spin("deny")}Deny</button>
         <span className="ml-auto text-xs text-muted">cannot be undone</span>
       </div>
     </div>

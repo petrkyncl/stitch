@@ -35,8 +35,10 @@ export class Meter {
     if (this.calls >= LIMITS.calls) throw new CapError(`Stopped at the cap of ${LIMITS.calls} model calls per run`);
     if (this.dollars >= LIMITS.dollars) throw new CapError(`Stopped at the cap of $${LIMITS.dollars.toFixed(2)} spend per run`);
   }
-  reset() { this.calls = 0; this.tokensIn = 0; this.tokensOut = 0; this.dollars = 0; this.started = Date.now(); }
-  add(usage, prompt, reply, model = MODEL) {
+  reset() { this.calls = 0; this.tokensIn = 0; this.tokensOut = 0; this.dollars = 0; this.parts = {}; this.started = Date.now(); }
+  // `purpose` splits the bill: "learning" (exploring an app, writing the program) or "planning" (splitting a request,
+  // choosing a capability). Running a capability on the phone costs nothing, so it never appears here.
+  add(usage, prompt, reply, model = MODEL, purpose = 'learning') {
     this.calls += 1;
     // Some local wrappers report no usage; estimate ~4 characters per token so the meter stays honest about scale.
     const tin = usage?.prompt_tokens || Math.ceil(prompt.length / 4);
@@ -44,11 +46,15 @@ export class Meter {
     this.tokensIn += tin;
     this.tokensOut += tout;
     const [pin, pout] = PRICES[model] || [PRICE_IN, PRICE_OUT];
-    this.dollars += (tin * pin + tout * pout) / 1e6; // each call at its own model's price
+    const dollars = (tin * pin + tout * pout) / 1e6; // each call at its own model's price
+    this.dollars += dollars;
+    const part = (this.parts[purpose] ??= { calls: 0, cost: 0 });
+    part.calls += 1;
+    part.cost += dollars;
   }
   get cost() { return this.dollars; }
   snapshot() {
-    return { calls: this.calls, tokensIn: this.tokensIn, tokensOut: this.tokensOut, cost: this.cost, ms: Date.now() - this.started };
+    return { calls: this.calls, tokensIn: this.tokensIn, tokensOut: this.tokensOut, cost: this.cost, parts: this.parts, ms: Date.now() - this.started };
   }
 }
 
@@ -118,7 +124,7 @@ async function post(body) {
 const noForcedTools = new Set();
 
 // Forced tool call: the model must answer through one function with a JSON schema. Far stricter than "reply with JSON".
-export async function askTool(meter, system, user, tool, { model = MODEL } = {}) {
+export async function askTool(meter, system, user, tool, { model = MODEL, purpose = 'learning' } = {}) {
   meter.guard();
   if (!hasCredentials) throw new Error('No API key. Set OPENAI_API_KEY in .env, or point LLM_BASE_URL at a local wrapper.');
   const body = {
@@ -136,11 +142,11 @@ export async function askTool(meter, system, user, tool, { model = MODEL } = {})
     // Some models (Sonnet with thinking) refuse a forced tool; ask again letting it choose, and remember that.
     if (!/tool_choice/i.test(e.message) || noForcedTools.has(model)) throw e;
     noForcedTools.add(model);
-    return askTool(meter, system, user, tool, { model });
+    return askTool(meter, system, user, tool, { model, purpose });
   }
   const msg = data.choices?.[0]?.message || {};
   const args = msg.tool_calls?.[0]?.function?.arguments;
-  meter.add(data.usage, system + user, args || msg.content || '', model);
+  meter.add(data.usage, system + user, args || msg.content || '', model, purpose);
   if (args) return typeof args === 'string' ? JSON.parse(args) : args;
   return extractJSON(msg.content || ''); // a provider without tool support still gets a chance
 }

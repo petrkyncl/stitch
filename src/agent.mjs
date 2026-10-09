@@ -80,19 +80,21 @@ export class Agent {
       this.runs = saved.runs || [];
       this.session = saved.session || 1;
       this.chat = saved.chat || 1;
+      this.resetAt = saved.resetAt || 0;
     } catch { /* first start */ }
     return this;
   }
 
   async saveHistory() {
     await mkdir('runs', { recursive: true });
-    await writeFile(HISTORY, JSON.stringify({ session: this.session, chat: this.chat, runs: this.runs.slice(-200) }, null, 1));
+    await writeFile(HISTORY, JSON.stringify({ session: this.session, chat: this.chat, resetAt: this.resetAt || 0, runs: this.runs.slice(-200) }, null, 1));
   }
 
   // Start from zero: every learned capability goes to the archive (nothing is deleted) and a new chat begins.
   async reset() {
     if (this.busy) throw new Error('Stitch is working on a task');
     const done = await this.registry.archive();
+    this.resetAt = Date.now(); // the numbers in the studio count from here
     await this.newSession();
     return done;
   }
@@ -220,7 +222,7 @@ export class Agent {
     const out = await askTool(meter,
       'Split a phone request into the separate tasks it asks for, in order. Keep the words of the request and make each task ' +
       'complete on its own (repeat the app or person if needed). The text of a message is never split. A single task stays alone.',
-      `Request, quoted: "${task}"`, SPLIT);
+      `Request, quoted: "${task}"`, SPLIT, { purpose: 'planning' });
     // A task whose result a later one uses asks for that result back; a task that uses it gets the placeholder.
     const tasks = (Array.isArray(out.tasks) ? out.tasks : []).slice(0, 5).map(t => {
       let text = String(typeof t === 'string' ? t : t?.task || '').trim();
@@ -253,7 +255,7 @@ export class Agent {
       { name: 'choose', description: 'The capability for the task, or none', parameters: { type: 'object', properties: {
         capability: { type: 'string', enum: [...caps.map(c => c.name), 'none'] },
         params: { type: 'object', description: 'Every param of the chosen capability, with its value from the task', additionalProperties: { type: 'string' } },
-      }, required: ['capability'] } });
+      }, required: ['capability'] } }, { purpose: 'planning' });
     const cap = out.capability && this.registry.get(out.capability);
     if (!cap) return null;
     emit('route', { text: `Model routed to ${cap.name} v${cap.version}`, via: 'model' });
@@ -340,7 +342,7 @@ export class Agent {
   async dryRunAndInstall(spec, params, meter, emit, previous, reason) {
     const at = spec.steps.findLastIndex(s => s.external);
     const label = spec.steps[at]?.label || 'the last step';
-    emit('test', { text: `Testing ${spec.name} with ${JSON.stringify(params)} up to "${label}", which the test does not press` });
+    emit('test', { text: `Testing the new capability from the start before installing it. "${label}" will not be pressed` });
     const res = await run({ ...spec, version: 0 }, params, { emit, confirm: async () => false });
     const ok = !!res.held && res.step === at;
     const tests = { passed: ok ? 1 : 0, total: 1, dry: true, last: ok ? `pass: every step up to "${label}" worked; that step waits for a person` : `fail: ${res.reason}` };
@@ -475,6 +477,6 @@ export class Agent {
   }
 
   state() {
-    return { limits: LIMITS, session: this.session, chat: this.chat, busy: this.busy, current: this.current, pending: this.pending || null, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
+    return { limits: LIMITS, resetAt: this.resetAt || 0, session: this.session, chat: this.chat, busy: this.busy, current: this.current, pending: this.pending || null, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
   }
 }

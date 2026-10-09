@@ -54,7 +54,7 @@ export function useDeviceStatus(d: DeviceDef, enabled = true) {
   return status;
 }
 
-export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number; cost: number; ms: number };
+export type MeterSnapshot = { calls: number; tokensIn: number; tokensOut: number; cost: number; ms: number; parts?: Record<string, { calls: number; cost: number }> };
 
 export type RunPath = "learned" | "code" | "repaired" | "held" | "failed" | "stopped";
 
@@ -117,6 +117,7 @@ export type EngineState = {
   hasKey: boolean;
   boxes?: boolean;
   limits?: { calls: number; dollars: number };
+  resetAt?: number;
   exploreModel?: string;
 };
 
@@ -163,5 +164,7 @@ export async function api<T = unknown>(path: string, body?: unknown): Promise<T>
   return data as T;
 }
 
-export const money = (v?: number) => (!v ? "$0" : v < 0.01 ? "$" + v.toFixed(4) : "$" + v.toFixed(3));
+// Under a cent is shown as such (the exact figure is in the title): rounding it to $0 would claim it was free.
+export const money = (v?: number) => (!v ? "$0" : v < 0.01 ? "<$0.01" : "$" + v.toFixed(3));
+export const exactMoney = (v?: number) => "$" + (v ?? 0).toFixed(5);
 export const secs = (ms?: number) => ((ms ?? 0) / 1000).toFixed(1) + " s";

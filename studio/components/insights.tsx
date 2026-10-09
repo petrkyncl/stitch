@@ -122,7 +122,7 @@ function Registry({ capabilities, granted, limits, onApprove, onRevoke, onRollba
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted">You tell it</span>
                 {c.paramInfo.map(p => (
-                  <span key={p.name} title={p.description} className="rounded-full border border-line px-2.5 py-0.5 text-sm">
+                  <span key={p.name} title={p.description} className="max-w-full truncate rounded-lg border border-line px-2.5 py-0.5 text-sm">
                     {p.name.replace(/_/g, " ")}{p.example ? <span className="text-muted"> e.g. {p.example}</span> : null}
                   </span>
                 ))}
