@@ -200,10 +200,15 @@ export class Agent {
 
   // One small model call, only when the request has a connective like "and then".
   async split(task, meter, emit) {
-    if (!/\b(and|then|after that|afterwards|a pak|potom)\b/i.test(task)) return [task];
-    // A request one capability already covers is not split (free, and keeps reuse at zero model calls).
-    await this.registry.load();
-    if (this.registry.match(task)) return [task];
+    // Split only a request that clearly has several tasks: "then", or "and" with two different apps named in it
+    // ("ask Claude ... and send it ... on WhatsApp"). "pizza places with rating and distance" stays whole and free.
+    const then = /\b(then|after that|afterwards|a pak|potom)\b/i.test(task);
+    const labels = (await installedApps().catch(() => [])).map(a => a.label).filter(l => l && l.length >= 3);
+    const apps = text => new Set(labels.filter(l => new RegExp(`\\b${l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)).map(l => l.toLowerCase()));
+    const [head, ...rest] = task.split(/\band\b/i);
+    const before = apps(head);
+    const another = rest.length && [...apps(rest.join(' and '))].some(a => !before.has(a));
+    if (!then && !(before.size && another)) return [task];
     const out = await askTool(meter,
       'Split a phone request into the separate tasks it asks for, in order. Keep the words of the request and make each task ' +
       'complete on its own (repeat the app or person if needed). The text of a message is never split. A single task stays alone.',

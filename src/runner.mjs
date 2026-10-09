@@ -145,6 +145,7 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
         const fresh = await waitFor(sel, pkg, 1500);
         if (fresh) await phone.typeInto(fresh, text);
       }
+      await phone.settle(pkg, 1200); // a send button often turns on only once the app has seen the new text
     } else if (s.op === 'enter') {
       say(`enter on "${s.sel.labelHas}"`);
       await phone.pressEnter();
