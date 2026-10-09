@@ -126,7 +126,7 @@ function shape(raw) {
   };
 }
 
-export async function compile({ task, trace, expect, meter, emit, previous }) {
+export async function compile({ task, trace, expect, final, meter, emit, previous }) {
   // A find at the very end, or one that looks for the success text, only checked the result during exploration.
   // The final check already does that, so it is not part of the program (it would scroll the list on every run).
   trace = trace.filter((s, i) => !(s.op === 'find' && (i === trace.length - 1 || (expect && fold(padTimes(s.text)) === fold(padTimes(expect))))));
@@ -134,7 +134,7 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
   let feedback = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     const spec = shape(await askTool(meter, SYSTEM,
-      `Original request, quoted: "${task}"\nSuccess text seen: ${expect || '(none, the last step was held before an external action)'}\n` +
+      `Original request, quoted: "${task}"\nSuccess text seen: ${expect || (final ? '(none yet: the last step saves and was not pressed; give expect as the short text that will show after it, e.g. {{hour|pad2}}:{{minute}})' : '(none, the last step was held before an external action)')}\n` +
       (previous ? `This replaces ${previous.name} v${previous.version}; keep its name and params.\n` : '') +
       `Trace:\n${JSON.stringify(steps, null, 1)}${feedback}`, TOOL, { model: exploreModel })); // part of learning: once per capability
     appendFile('runs/decisions.jsonl', JSON.stringify({ at: Date.now(), compile: attempt + 1, name: spec.name, params: spec.params, patterns: spec.patterns, typed: spec.typed, targets: spec.targets, expect: spec.expect, reply: spec.reply }) + '\n').catch(() => {}); // for reports
@@ -148,7 +148,7 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
         .map((s, i) => (i === repeatAt ? { ...s, item: true, sel: { resourceId: s.sel.resourceId, labelHas: '', cls: s.sel.cls } } : s))
         .map((s, i) => (['type', 'find', 'extract'].includes(s.op) ? { ...s, text: spec.typed[String(i)] } : s))
         .map((s, i) => (spec.targets[String(i)] && s.sel ? { ...s, sel: { ...s.sel, labelHas: spec.targets[String(i)], templated: true } } : s))
-        .filter((st, i) => i === 0 || KEEP.has(st.op) || st.item || !spec.drop.has(i));
+        .filter((st, i) => i === 0 || KEEP.has(st.op) || st.item || st.final || st.external || !spec.drop.has(i));
       const manifest = { ...manifestFor(program), app: trace[0]?.pkg };
       const { drop, drop_steps, typed, targets, repeat_step, ...clean } = spec;
       clean.repeat = repeatAt >= 0;
@@ -156,10 +156,12 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
         // Nothing was shown as proof (the run stopped before an irreversible step), so check the effect instead.
         // If it typed something, the proof is that text showing outside the field, sent (a message, a comment).
         // Otherwise, the element it acted on is gone (a deleted alarm).
-        clean.expect = '';
+        // A save that was mapped, not pressed: the model's template of what will show after it is the proof.
+        const proof = final && clean.expect && matchPatterns(spec.patterns, task) ? clean.expect : '';
+        clean.expect = proof;
         const typed = [...program].reverse().find(st => st.op === 'type' && st.text);
         const chosen = program.find(st => st.sel?.templated);
-        if (clean.repeat) { /* checked by the loop: no item left */ }
+        if (clean.repeat || proof) { /* checked by the loop: no item left, or by the expected text */ }
         else if (typed) clean.sent = typed.text;
         else if (chosen) clean.gone = chosen.sel.labelHas;
       }

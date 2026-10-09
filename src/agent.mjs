@@ -309,7 +309,7 @@ export class Agent {
       // with it, asking at the send.
       const values = { ...params, ...(matchPatterns(next.patterns, task) || {}) };
       const fixed = await this.dryRunAndInstall(next, values, meter, emit, cap, `repaired after: ${res.reason}`);
-      const from = Math.max(fixed.steps.findLastIndex(s => s.external), 0);
+      const from = Math.max(fixed.steps.findLastIndex(s => s.external || s.final), 0);
       const done = await this.useExisting({ cap: fixed, params: values }, task, meter, emit, { repair: false, from, pkg: explored.heldIn });
       return { ...done, path: done.ok ? 'repaired' : done.path };
     }
@@ -328,7 +328,7 @@ export class Agent {
       const values = { ...defaults, ...(matchPatterns(spec.patterns, task) || {}) };
       const cap = await this.dryRunAndInstall(spec, values, meter, emit, null, `learned from "${task}"`);
       const hit = { cap, params: this.registry.match(task)?.params || values };
-      const from = Math.max(cap.steps.findLastIndex(s => s.external), 0);
+      const from = Math.max(cap.steps.findLastIndex(s => s.external || s.final), 0);
       const done = await this.useExisting(hit, task, meter, emit, { repair: false, from, pkg: explored.heldIn });
       return { ...done, path: done.ok ? 'learned' : done.path };
     }
@@ -336,21 +336,21 @@ export class Agent {
     return { path: 'learned', ok: cap.status === 'installed', capability: `${cap.name} v${cap.version}`, data: explored.data };
   }
 
-  // A capability that ends in a send, payment or delete is tested with a dry run: every step up to that one runs for
-  // real with the request's own values (never someone else's chat), and that step is left unpressed. It installs only
-  // if the dry run reached it with everything before it working.
+  // A capability that ends in a step that saves or sends is tested from the start with the request's own values (never
+  // someone else's chat) up to that step, which is left unpressed. It installs only if every step before it worked; the
+  // run that follows presses it on the prepared screen (a send asks first), so the request is done once, not twice.
   async dryRunAndInstall(spec, params, meter, emit, previous, reason) {
-    const at = spec.steps.findLastIndex(s => s.external);
+    const at = spec.steps.findLastIndex(s => s.external || s.final);
     const label = spec.steps[at]?.label || 'the last step';
-    emit('test', { text: `Testing the new capability from the start before installing it. "${label}" will not be pressed` });
-    const res = await run({ ...spec, version: 0 }, params, { emit, confirm: async () => false });
+    emit('test', { text: `Testing the program from the start, up to "${label}"` });
+    const res = await run({ ...spec, version: 0 }, params, { emit, confirm: async () => false, stopAt: at });
     const ok = !!res.held && res.step === at;
-    const tests = { passed: ok ? 1 : 0, total: 1, dry: true, last: ok ? `pass: every step up to "${label}" worked; that step waits for a person` : `fail: ${res.reason}` };
+    const tests = { passed: ok ? 1 : 0, total: 1, dry: true, last: ok ? `pass: every step up to "${label}" worked` : `fail: ${res.reason}` };
     if (!ok) {
       emit('error', { text: `Test failed, not installing: ${res.reason}` });
       throw new Error(`Test failed: ${res.reason}`);
     }
-    emit('test', { text: `Test passed: everything up to "${label}" is ready on the phone` });
+    emit('test', { text: `Test passed: every step up to "${label}" works` });
     return this.install(spec, previous, reason, tests);
   }
 

@@ -17,7 +17,7 @@ The first commit is from 20:44. The brief is in [docs/hackathon-brief.md](docs/h
 |---|---|
 | **Gap detection** | A request matches no installed capability (checked by the capabilities' own patterns, no model call), so Stitch says so and starts building. The gap always comes from a request; nothing is pre-written. |
 | **Create** | A model explores the app screen by screen through the accessibility tree (no screenshots), then a compiler turns the trace into a parameterized program: steps with stable selectors, templates like `{{hour}}`, trigger patterns, the app it needs and a permission manifest. |
-| **Test** | Before install, the program runs on the device with a **different input** and must show its result on screen. A program that ends in a send or delete gets a **dry run** with the request's own values up to that step, which the test does not press. No passing test, no install. The test is in the run log. |
+| **Test** | Learning maps the app up to the step that finishes the request (Save, Send) and does not press it. The compiled program then runs from the start with the request's own values up to that step: no pass, no install. Then the program presses it (a send asks first), so the first request ends exactly like every later one: one alarm, one message. A program without such a step (a search, a table) is tested with a different input instead. The test is in the run log. |
 | **Install** | Code, test result and manifest go to `registry/<name>/`, every version kept (`v1.json`, `v2.json`). |
 | **Reuse** | Every later request with any input runs the program as code: 0 model calls, $0. A **new chat is a fresh session** that only has what is on disk. |
 | **Evolve** | When a step no longer finds its element, Stitch explores again from that app, recompiles, retests and installs v2. A person can roll back to any earlier version. |
@@ -88,9 +88,9 @@ npm test                               # offline tests
 
 ## What is simulated, missing or fragile
 
-- **The test before install really runs.** Learning "Set an alarm for 7:35" sets 7:35 while exploring and then a
-  second alarm with the test's different input (9:15, say) to prove the program is not a replay. That test alarm
-  stays; undoing a test is not built.
+- **Finding the finishing step** relies on the model marking it, backed by a check on save-like labels (Save, Done,
+  Set, OK) after typing. An app whose finishing button is named differently may still be saved while learning and
+  then once more by the test.
 - **"Simulate app update"** on a capability card renames one of its selectors to show the repair; it does not install an
   app update. Repairs after real screen changes also happened tonight (Google Maps above).
 - **Google Clock on the emulators** sets times on its dial, which only labels every fifth minute: 6:20 and 6:35 work,

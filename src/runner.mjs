@@ -26,7 +26,7 @@ const MAX_ROUNDS = Number(process.env.MAX_ROUNDS_PER_RUN || 100); // the cap on 
 // done on screen, so the person sees exactly what would go out. Without it such a step holds the run.
 // `from` and `pkg` start it part way, on a screen that is already prepared (right after learning, the message is
 // typed and only the send is left).
-export async function run(cap, params, { emit, allowExternal = false, confirm = null, from = 0, pkg: startPkg = '' }) {
+export async function run(cap, params, { emit, allowExternal = false, confirm = null, from = 0, pkg: startPkg = '', stopAt = -1 }) {
   let pkg = startPkg;
   let justLaunched = false;
   let irreversible = false; // set once a step that sends, pays or deletes has run
@@ -35,6 +35,9 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
   const itemAt = cap.repeat ? cap.steps.findIndex(st => st.item) : -1;
   let rounds = 0;
   let retried = false; // one second try per run when an item does not open as expected
+  // Fields typed on this screen. An app can still fill in its defaults after we typed (Samsung Clock resets the hour
+  // while its alarm screen opens), so each is checked again before the tap that saves or sends them.
+  let filled = [];
   let start = from;
   for (;;) {
   for (let i = start; i < cap.steps.length; i++) {
@@ -42,6 +45,7 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
     const say = text => emit('step', { kind: 'run', text });
 
     if (s.op === 'launch') {
+      filled = [];
       say(`open ${s.pkg}`);
       await phone.launch(s.pkg);
       pkg = s.pkg;
@@ -75,6 +79,7 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
     if (s.op === 'enter') {
       // Enter goes to whatever field has focus, which is the one the previous step typed into.
       say('press enter');
+      filled = []; // enter submits what was typed
       await phone.pressEnter();
       await phone.settle(pkg);
       continue;
@@ -125,6 +130,20 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
         if (!allowed) return { ok: false, held: true, step: i, reason: `"${s.label}" was not allowed` };
         allowExternal = true; // one yes covers this whole request, every round of it
       }
+      let retyped = false;
+      for (const f of filled) {
+        const field = await waitFor(f.sel, pkg, 300);
+        if (field && !padTimes(phone.label(field)).toLowerCase().includes(padTimes(f.text).toLowerCase())) {
+          say(`"${f.text}" was replaced by the app, typing it again`);
+          await phone.typeInto(field, f.text);
+          await phone.settle(pkg, 1200);
+          retyped = true;
+        }
+      }
+      filled = [];
+      // A test stops before the step that saves or sends; the run that follows presses it on this prepared screen.
+      if (i === stopAt) return { ok: false, held: true, step: i, reason: `stopped before "${s.label || sel.labelHas}"` };
+      if (retyped) node = await waitFor(sel, pkg, 1000) || node; // the screen was touched since it was found
       say(`tap "${sel.labelHas || s.label}"`);
       if (s.external) before = new Set(seen.map(phone.label).filter(Boolean)); // to tell the answer from what was there
       await phone.tap(node);
@@ -145,6 +164,7 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
         const fresh = await waitFor(sel, pkg, 1500);
         if (fresh) await phone.typeInto(fresh, text);
       }
+      filled.push({ sel, text });
       await phone.settle(pkg, 1200); // a send button often turns on only once the app has seen the new text
     } else if (s.op === 'enter') {
       say(`enter on "${s.sel.labelHas}"`);
