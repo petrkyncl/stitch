@@ -160,7 +160,9 @@ export class Agent {
           const prev = results.at(-1);
           const value = prev?.reply || (prev?.data?.length ? Object.values(prev.data[0]).join(', ') : '');
           if (!value) throw new Error(`Task ${i + 1} needs the result of task ${i}, which returned nothing`);
-          one = one.replaceAll('{{previous}}', value.replace(/\s*\n\s*/g, ' ').slice(0, 500));
+          // All of it, on one line: a typed line break acts as Enter, which in some apps sends before anyone approved it.
+          // The cap only stops a runaway answer.
+          one = one.replaceAll('{{previous}}', value.replace(/\s*\n\s*/g, ' ').trim().slice(0, 4000));
         }
         if (tasks.length > 1) emit('step', { kind: 'plan', text: `Task ${i + 1} of ${tasks.length}: ${one}` });
         const res = direct

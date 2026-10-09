@@ -26,6 +26,9 @@ const MAX_ROUNDS = Number(process.env.MAX_ROUNDS_PER_RUN || 100); // the cap on 
 // done on screen, so the person sees exactly what would go out. Without it such a step holds the run.
 // `from` and `pkg` start it part way, on a screen that is already prepared (right after learning, the message is
 // typed and only the send is left).
+// A long message is named by its start in the result line, not repeated in full.
+const brief = t => { const one = String(t).replace(/\s+/g, ' ').trim(); return one.length > 60 ? `${one.slice(0, 57)}...` : one; };
+
 export async function run(cap, params, { emit, allowExternal = false, confirm = null, from = 0, pkg: startPkg = '', stopAt = -1 }) {
   let pkg = startPkg;
   let justLaunched = false;
@@ -192,10 +195,10 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
     for (const end = Date.now() + 12000; Date.now() < end;) {
       const screen = await phone.observe(pkg);
       if (screenHasText(screen.nodes.filter(n => !n.editable), want)) {
-        if (!cap.reply) return { ok: true, verified: `"${want}" is on screen as sent` };
+        if (!cap.reply) return { ok: true, verified: `"${brief(want)}" is on screen as sent` };
         emit('step', { kind: 'run', text: 'waiting for the answer' });
         const reply = await readReply(pkg, before, params);
-        return { ok: true, verified: `"${want}" is on screen as sent`, reply };
+        return { ok: true, verified: `"${brief(want)}" is on screen as sent`, reply };
       }
       await phone.sleep(300);
     }

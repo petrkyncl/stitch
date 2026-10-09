@@ -45,7 +45,7 @@ export function toRegExp(p) {
     src = `^\\s*${out}\\s*[.!?]?\\s*$`;
   }
   TEMPLATE_SLOT.lastIndex = 0;
-  return new RegExp(src, 'i');
+  return new RegExp(src, 'is'); // s: a value can span lines (a poem passed on to a message)
 }
 
 const escapeLiteral = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
