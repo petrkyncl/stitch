@@ -10,3 +10,4 @@ hands/local.properties
 .DS_Store
 hands/.previous-ime
 registry-archive/
+site/.vercel
