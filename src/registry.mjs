@@ -39,7 +39,9 @@ export class Registry {
       if (params) {
         const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
         // A request may quote its values ("saying \"hi\""); the quotes are not part of the message.
-        const clean = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v).trim().replace(/^["'\u201c\u201d]+|["'\u201c\u201d]+$/g, '').trim()]));
+        // "... and give me the result" asks for the answer back; it is not part of what gets sent.
+        const tail = cap.reply ? /\s+and\s+(give|tell|show|send)\s+me\s+(the\s+)?(result|answer|reply|response)s?\.?$/i : null;
+        const clean = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v).replace(tail || /$^/, '').trim().replace(/^["'\u201c\u201d]+|["'\u201c\u201d]+$/g, '').trim()]));
         return { cap, params: { ...defaults, ...clean } };
       }
     }

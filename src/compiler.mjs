@@ -1,6 +1,6 @@
 // Turns one explored trace into a reusable capability: parameters, trigger patterns,
 // templated steps, a success check and a test with different inputs.
-import { askTool } from './llm.mjs';
+import { askTool, exploreModel } from './llm.mjs';
 import { manifestFor } from './policy.mjs';
 
 const FILTERS = {
@@ -61,6 +61,8 @@ export function matchPatterns(patterns, task) {
 
 const SYSTEM = `You turn a recorded Android UI trace into a reusable, parameterized capability.
 Values the user chose (times, names, search words) become params; everything else stays constant.
+Text typed from the request (a message, a prompt, a search) is always a param, never a constant: for "prompt Claude to
+give me a joke" the param is prompt = "give me a joke", so the same capability also sends "write me a poem".
 If the agent chose a value the request did not give (e.g. the wording of a greeting), make it a param with a "default"
 equal to what was used, so later requests can override it but do not have to.
 Templates use {{param}} with optional filters: {{hour|pad2}} pads to two digits, also |upper |lower |trim.
@@ -86,6 +88,7 @@ const TOOL = {
       typed: { type: 'array', items: { type: 'object', properties: { step: { type: 'integer' }, template: { type: 'string' } }, required: ['step', 'template'] } },
       targets: { type: 'array', description: 'Steps whose element is chosen by the input: label template of that element', items: { type: 'object', properties: { step: { type: 'integer' }, label: { type: 'string' } }, required: ['step', 'label'] } },
       expect: { type: 'string', description: 'Template of a short text visible after success, e.g. {{hour|pad2}}:{{minute}}' },
+      reply: { type: 'boolean', description: 'true when the request wants back what the app answers after the last step, e.g. "and give me the result", "what does it say"' },
       test: { type: 'array', description: 'Test input, every param with a value different from the original task', items: { type: 'object', properties: { param: { type: 'string' }, value: { type: 'string' } }, required: ['param', 'value'] } },
     },
     required: ['name', 'description', 'params', 'patterns', 'drop_steps', 'typed', 'expect', 'test'],
@@ -118,7 +121,7 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
     const spec = shape(await askTool(meter, SYSTEM,
       `Original request, quoted: "${task}"\nSuccess text seen: ${expect || '(none, the last step was held before an external action)'}\n` +
       (previous ? `This replaces ${previous.name} v${previous.version}; keep its name and params.\n` : '') +
-      `Trace:\n${JSON.stringify(steps, null, 1)}${feedback}`, TOOL));
+      `Trace:\n${JSON.stringify(steps, null, 1)}${feedback}`, TOOL, { model: exploreModel })); // part of learning: once per capability
     const problems = validate(spec, task, trace, expect);
     if (!problems.length) {
       const program = trace
@@ -203,8 +206,16 @@ export function validate(spec, task, trace, expect) {
         spec.typed[String(i)] = t;
       }
       if (t !== undefined) { const fixed = autofix(t, got, s.text); if (fixed) { t = fixed; spec.typed[String(i)] = fixed; } }
+      // Words typed straight from the request must come from a param, or the capability only ever sends that one text.
+      if (s.op === 'type' && t !== undefined && !String(t).includes('{{') && /[a-z]{3}/i.test(s.text || '') && fold(task).includes(fold(s.text))) {
+        problems.push(`step ${i} types "${s.text}" from the request as a constant; make it a param and type {{param}}`);
+      }
       if (t === undefined) problems.push(`missing typed template for step ${i}`);
-      else if (fold(padTimes(render(t, got))) !== fold(padTimes(s.text))) problems.push(`step ${i} renders "${render(t, got)}" but the trace typed "${s.text}"`);
+      else if (fold(padTimes(render(t, got))) !== fold(padTimes(s.text))) {
+        const rendered = render(t, got);
+        const tooMuch = fold(rendered).startsWith(fold(s.text)) ? `; the pattern captured too much: end the group where "${s.text}" ends (lazy group) and allow the rest, e.g. "${rendered.slice(s.text.length).trim()}", as an optional tail` : '';
+        problems.push(`step ${i} renders "${rendered}" but the trace typed "${s.text}"${tooMuch}`);
+      }
     });
     // A param no step uses is a request the program ignores, e.g. a message it never types.
     // Only steps count: a held capability throws its success text away, so a param used only there does nothing.

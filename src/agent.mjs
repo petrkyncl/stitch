@@ -36,6 +36,7 @@ function combine(results, total) {
     ok: !failed && results.length === total,
     capability: results.map(r => r.capability).filter(Boolean).join(' + ') || undefined,
     data: [...results].reverse().find(r => r.data?.length)?.data,
+    reply: [...results].reverse().find(r => r.reply)?.reply,
     error: failed?.error,
   };
 }
@@ -183,7 +184,7 @@ export class Agent {
     return { cap, params: { ...defaults, ...(out.params || {}) } };
   }
 
-  async useExisting({ cap, params }, task, meter, emit, { repair = true } = {}) {
+  async useExisting({ cap, params }, task, meter, emit, { repair = true, from = 0, pkg = '' } = {}) {
     // It runs right up to the step that sends, pays or deletes, then asks, with the result of every step before
     // it on screen. An "always" from an earlier run means it does not ask.
     const confirm = async step => {
@@ -196,13 +197,16 @@ export class Agent {
       }
       return decision !== 'deny';
     };
-    emit('use', { text: `Running ${cap.name} v${cap.version} as code with ${JSON.stringify(params)}` });
-    const res = await run(cap, params, { emit, allowExternal: cap.approved === true, confirm });
+    emit('use', { text: from ? `Installed ${cap.name} v${cap.version}; finishing on the screen it prepared` : `Running ${cap.name} v${cap.version} as code with ${JSON.stringify(params)}` });
+    let res = await run(cap, params, { emit, allowExternal: cap.approved === true, confirm, from, pkg });
+    // The prepared screen changed under it (nothing irreversible happened yet): run the whole program instead.
+    if (from && !res.ok && !res.held && !res.irreversible) res = await run(cap, params, { emit, allowExternal: cap.approved === true, confirm });
     if (res.ok) {
       cap.runs = (cap.runs || 0) + 1;
       await this.registry.save(cap);
       emit('done', { text: `Done. Verified on screen: ${res.verified || "final step"}` });
-      return { path: 'code', ok: true, capability: `${cap.name} v${cap.version}`, data: res.data };
+      if (res.reply) emit('answer', { text: res.reply });
+      return { path: 'code', ok: true, capability: `${cap.name} v${cap.version}`, data: res.data, reply: res.reply };
     }
     if (res.held) {
       emit('blocked', { text: `Not allowed, so it stopped before ${res.reason.split(' was')[0]}. Nothing was sent; what it prepared is still on the phone.` });
@@ -225,7 +229,8 @@ export class Agent {
       // The repaired program ends in a send: it cannot be tested for real, so save it held and finish the request
       // with it, asking at the send.
       const fixed = await this.install(next, cap, `repaired after: ${res.reason}`, { passed: 0, total: 0 });
-      const done = await this.useExisting({ cap: fixed, params: this.registry.match(task)?.params || params }, task, meter, emit, { repair: false });
+      const from = Math.max(fixed.steps.findLastIndex(s => s.external), 0);
+      const done = await this.useExisting({ cap: fixed, params: this.registry.match(task)?.params || params }, task, meter, emit, { repair: false, from, pkg: explored.heldIn });
       return { ...done, path: done.ok ? 'repaired' : done.path };
     }
     const installed = await this.testAndInstall(next, meter, emit, cap, `repaired after: ${res.reason}`);
@@ -242,7 +247,9 @@ export class Agent {
       // The capability is written but held. Ask now, and if allowed, finish the request with it as code.
       const hit = this.registry.match(task);
       if (hit?.cap.name !== cap.name) return { path: 'held', ok: false, capability: `${cap.name} v${cap.version}` };
-      const done = await this.useExisting(hit, task, meter, emit, { repair: false });
+      // Finish right where exploring stopped: the screen is prepared, only the send is left.
+      const from = Math.max(cap.steps.findLastIndex(s => s.external), 0);
+      const done = await this.useExisting(hit, task, meter, emit, { repair: false, from, pkg: explored.heldIn });
       return { ...done, path: done.ok ? 'learned' : done.path };
     }
     const cap = await this.testAndInstall(spec, meter, emit, null, `learned from "${task}"`);

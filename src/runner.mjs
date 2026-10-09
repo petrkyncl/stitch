@@ -22,12 +22,14 @@ async function waitFor(sel, pkg, timeoutMs) {
 
 // `confirm(step)` is asked right before a step that sends, pays or deletes, with everything before it already
 // done on screen, so the person sees exactly what would go out. Without it such a step holds the run.
-export async function run(cap, params, { emit, allowExternal = false, confirm = null }) {
-  let pkg = '';
+// `from` and `pkg` start it part way, on a screen that is already prepared (right after learning, the message is
+// typed and only the send is left).
+export async function run(cap, params, { emit, allowExternal = false, confirm = null, from = 0, pkg: startPkg = '' }) {
+  let pkg = startPkg;
   let justLaunched = false;
   let irreversible = false; // set once a step that sends, pays or deletes has run
   let before = new Set(); // texts on screen right before that step
-  for (let i = 0; i < cap.steps.length; i++) {
+  for (let i = from; i < cap.steps.length; i++) {
     const s = cap.steps[i];
     const say = text => emit('step', { kind: 'run', text });
 
