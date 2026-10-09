@@ -2,6 +2,8 @@
 
 **The phone agent that grows new limbs, not new privileges.**
 
+**Demo video (90 s):** https://youtu.be/pXb6ZvqWPbI &nbsp; **Page:** https://stitch-phone-agent.vercel.app
+
 Stitch drives real Android phones. Ask it for something it cannot do yet and it notices the gap, explores the app,
 writes the missing capability as a program, tests it, installs it in a versioned registry, and from then on runs it as
 code with **zero model calls**. When an app changes, it repairs the capability and installs the next version. Anything
