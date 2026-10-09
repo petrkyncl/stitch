@@ -10,11 +10,13 @@ import { PhonePanel } from "./phone-panel";
 import { Insights } from "./insights";
 import { AppPicker } from "./app-picker";
 
+// In the order of the demo: emulators first, then the phone from zero, then the same chain as code in a new chat.
 const EXAMPLES = [
-  "Set an alarm for 7:14",
-  "Find coffee in Google Maps",
+  "Set an alarm for 7:35",
+  "ask Claude for a poem about Prague and send it to Petr Kyncl on WhatsApp",
+  "ask Claude for a haiku about coffee and send it to Petr Kyncl on WhatsApp",
   "Get 10 pizza places from Google Maps with rating and distance",
-  "Send Petr Kyncl a WhatsApp message saying I am on my way",
+  "delete all alarms",
 ];
 
 export default function Studio() {

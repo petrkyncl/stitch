@@ -48,9 +48,12 @@ async function start() {
     const server = spawn(ADB, adbArgs(['shell', 'CLASSPATH=/data/local/tmp/stitch-scrcpy.jar', 'app_process', '/', 'com.genymobile.scrcpy.Server', SERVER_VERSION,
       `scid=${SCID}`, 'tunnel_forward=true', 'audio=false', 'control=false', 'raw_stream=true', 'max_size=0', 'video_bit_rate=20000000', 'max_fps=30', 'cleanup=false']),
     { stdio: 'ignore' });
-    await sleep(600);
+    // An emulator's server takes longer to listen than a phone's; connecting too early gets a socket adb closes at once.
+    await sleep(1200);
     const sock = await connect();
-    const ff = spawn(FFMPEG, ['-loglevel', 'error', '-f', 'h264', '-i', 'pipe:0', '-f', 'mjpeg', '-q:v', '3', 'pipe:1'], { stdio: ['pipe', 'pipe', 'ignore'] });
+    // ffmpeg reads 5 MB before it outputs anything by default: a phone fills that in a moment, a still emulator never
+    // does. A tiny probe and low delay show the first frame at once.
+    const ff = spawn(FFMPEG, ['-loglevel', 'error', '-probesize', '32', '-flags', 'low_delay', '-f', 'h264', '-i', 'pipe:0', '-f', 'mjpeg', '-q:v', '3', 'pipe:1'], { stdio: ['pipe', 'pipe', 'ignore'] });
     sock.pipe(ff.stdin);
     ff.stdin.on('error', () => {});
     sock.on('error', () => {});
@@ -79,6 +82,7 @@ async function start() {
     };
     sock.on('close', restart);
     server.on('exit', restart);
+    if (sock.destroyed) restart(); // it closed before these handlers existed, which used to leave "Connecting" for good
   } catch (e) {
     console.error('stream:', e.message);
     pipeline = null;
