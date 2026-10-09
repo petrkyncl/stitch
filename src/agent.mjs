@@ -355,7 +355,9 @@ export class Agent {
   }
 
   async testAndInstall(spec, meter, emit, previous, reason) {
-    emit('test', { text: `Testing ${spec.name} with new input ${JSON.stringify(spec.test)}` });
+    // The test really runs on the phone, so say which values it uses: a second alarm at 9:15 is the test, not a mistake.
+    const input = Object.entries(spec.test || {}).map(([k, v]) => `${k} ${v}`).join(', ');
+    emit('test', { text: `Testing it on the phone with different input before installing (${input || 'no input'}), to prove it is a program and not a replay` });
     const defaults = Object.fromEntries((spec.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
     const res = await run({ ...spec, version: 0 }, { ...defaults, ...spec.test }, { emit });
     const tests = { passed: res.ok ? 1 : 0, total: 1, last: res.ok ? `pass: ${res.verified || 'ok'}` : `fail: ${res.reason}` };

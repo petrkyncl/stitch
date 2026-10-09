@@ -88,6 +88,9 @@ npm test                               # offline tests
 
 ## What is simulated, missing or fragile
 
+- **The test before install really runs.** Learning "Set an alarm for 7:35" sets 7:35 while exploring and then a
+  second alarm with the test's different input (9:15, say) to prove the program is not a replay. That test alarm
+  stays; undoing a test is not built.
 - **"Simulate app update"** on a capability card renames one of its selectors to show the repair; it does not install an
   app update. Repairs after real screen changes also happened tonight (Google Maps above).
 - **Google Clock on the emulators** sets times on its dial, which only labels every fifth minute: 6:20 and 6:35 work,
