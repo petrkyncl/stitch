@@ -93,10 +93,11 @@ function Workspace() {
         </Chip>
       </Header>
 
+      <div className="flex min-h-0 flex-1">
+      <Sidebar runs={state?.runs ?? []} current={current} shown={shown} busy={busy}
+        onPick={s => setViewing(s === current ? null : s)} onNew={() => { setViewing(null); act("/api/session"); }} />
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]">
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
-          <ChatBar runs={state?.runs ?? []} current={current} shown={shown} busy={busy}
-            onPick={s => setViewing(s === current ? null : s)} onNew={() => { setViewing(null); act("/api/session"); }} />
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
             <Chat runs={(state?.runs ?? []).filter(r => r.session === shown)} live={shown === current ? live : null} sessions={[]} now={now} capabilities={state?.capabilities ?? []}
               pending={state?.pending ?? null} onDecide={decision => act("/api/permission", { decision })} />
@@ -140,6 +141,7 @@ function Workspace() {
           />
         </section>
       </main>
+      </div>
     </div>
   );
 }
@@ -174,41 +176,29 @@ function Examples({ onPick }: { onPick: (text: string) => void }) {
   );
 }
 
-// The chats: pick an earlier one to read it again, or start a new one (a fresh session; learned capabilities stay).
-function ChatBar({ runs, current, shown, busy, onPick, onNew }: { runs: Run[]; current: number; shown: number; busy: boolean; onPick: (s: number) => void; onNew: () => void }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const close = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
+// The chats, ChatGPT style: a left sidebar with a new chat on top and every chat below, newest first. Each chat is a
+// session (fresh memory; learned capabilities stay). Picking an older one shows it; asking continues the current one.
+function Sidebar({ runs, current, shown, busy, onPick, onNew }: { runs: Run[]; current: number; shown: number; busy: boolean; onPick: (s: number) => void; onNew: () => void }) {
   const chats = new Map<number, Run[]>();
   for (const r of runs) chats.set(r.session, [...(chats.get(r.session) ?? []), r]);
   if (!chats.has(current)) chats.set(current, []);
   const list = [...chats.entries()].sort((a, b) => b[0] - a[0]);
-  const title = (s: number) => chats.get(s)?.[0]?.task ?? "New chat";
   return (
-    <div ref={box} className="relative flex items-center gap-2">
-      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-        className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-night-2">
-        <span className="truncate font-medium">{title(shown)}</span>
-        <span aria-hidden className="text-xs text-muted">▾</span>
+    <aside aria-label="Chats" className="hidden w-64 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-night-2/40 px-3 py-4 lg:flex">
+      <button type="button" onClick={onNew} disabled={busy}
+        className="mb-3 flex items-center gap-2.5 rounded-lg px-3 py-2 text-left hover:bg-night-3 disabled:opacity-50">
+        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+        New chat
       </button>
-      {shown !== current && <button type="button" onClick={() => onPick(current)} className="text-sm text-dawn hover:underline">Back to the current chat</button>}
-      <span className="flex-1" />
-      <button type="button" onClick={onNew} disabled={busy} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:border-muted disabled:opacity-50">New chat</button>
-      {open && (
-        <div className="absolute top-full left-0 z-40 mt-1 flex max-h-96 w-96 flex-col overflow-y-auto rounded-xl border border-line bg-night-2 py-1 shadow-2xl">
-          {list.map(([s, rs]) => (
-            <button key={s} type="button" onClick={() => { onPick(s); setOpen(false); }}
-              className={`flex flex-col px-3 py-2 text-left hover:bg-night-3 ${s === shown ? "bg-night-3" : ""}`}>
-              <span className="truncate">{title(s)}</span>
-              <span className="text-xs text-muted">{rs.length} {rs.length === 1 ? "task" : "tasks"}{s === current ? " · current" : ""}{rs[0] ? ` · ${new Date(rs[0].at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}` : ""}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+      <p className="px-3 pb-1 font-mono text-[11px] tracking-wider text-muted uppercase">Chats</p>
+      {list.map(([s, rs]) => (
+        <button key={s} type="button" onClick={() => onPick(s)} aria-current={s === shown ? "page" : undefined}
+          title={rs[0]?.task ?? "New chat"}
+          className={`flex flex-col rounded-lg px-3 py-2 text-left ${s === shown ? "bg-night-3 text-flesh" : "text-flesh/80 hover:bg-night-3/60"}`}>
+          <span className="truncate text-sm">{rs[0]?.task ?? "New chat"}</span>
+          <span className="text-xs text-muted">{rs.length ? `${rs.length} ${rs.length === 1 ? "task" : "tasks"} · ${new Date(rs[0].at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}` : "empty"}{s === current ? " · now" : ""}</span>
+        </button>
+      ))}
+    </aside>
   );
 }
