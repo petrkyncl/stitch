@@ -11,6 +11,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SDK=${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}
 AVD=${AVD:-Pixel_9_Pro}
 export ANDROID_ADB_SERVER_PORT=5038
+# This adb server is for the emulators only: it must never claim the USB phone, or the two servers fight over it.
+export ADB_LIBUSB_START_DETACHED=1
 export PATH="$SDK/platform-tools:$PATH"
 N=${2:-4}
 
@@ -34,7 +36,7 @@ case "$1" in
       ANDROID_SERIAL=$serial HANDS_PORT=$((7921 + i)) NO_BUILD=1 sh "$ROOT/hands/install.sh" | tail -1
       mkdir -p "$dir/runs" "$dir/registry"
       if ! lsof -iTCP:$((4410 + 2 * i)) -sTCP:LISTEN >/dev/null 2>&1; then
-        (cd "$dir" && ANDROID_SERIAL=$serial HANDS_PORT=$((7921 + i)) SCRCPY_PORT=$((27191 + i)) PORT=$((4410 + 2 * i)) \
+        (cd "$dir" && ANDROID_SERIAL=$serial HANDS_PORT=$((7921 + i)) SCRCPY_PORT=$((27191 + i)) PORT=$((4410 + 2 * i)) STITCH_REGISTRY="$ROOT/registry" \
           nohup node --env-file-if-exists="$ROOT/.env" "$ROOT/src/server.mjs" >engine.log 2>&1 </dev/null &)
       fi
       echo "  engine on http://localhost:$((4410 + 2 * i))"
@@ -42,7 +44,7 @@ case "$1" in
     done
     ;;
   down)
-    for p in $(lsof -tiTCP:4410-4425 -sTCP:LISTEN 2>/dev/null); do kill "$p" 2>/dev/null || true; done
+    for p in $(lsof -tiTCP:4410-4499 -sTCP:LISTEN 2>/dev/null); do kill "$p" 2>/dev/null || true; done
     for s in $(adb devices | awk '/^emulator-/ {print $1}'); do adb -s "$s" emu kill >/dev/null 2>&1 || true; done
     ;;
   *) echo "usage: $0 up [N] | down"; exit 1 ;;

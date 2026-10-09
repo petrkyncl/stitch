@@ -5,7 +5,9 @@ export type DeviceDef = { id: string; label: string; port: number };
 
 export const DEVICES: DeviceDef[] = [
   { id: "phone", label: "Phone (USB)", port: 4400 },
-  ...[1, 2, 3, 4].map(n => ({ id: `emu${n}`, label: `Emulator ${n}`, port: 4408 + 2 * n })),
+  // Emulator n has its engine on 4408 + 2n. Keep the count in step with `scripts/emulators.sh up N`.
+  ...Array.from({ length: Number(process.env.NEXT_PUBLIC_EMULATORS || 6) }, (_, i) => i + 1)
+    .map(n => ({ id: `emu${n}`, label: `Emulator ${n}`, port: 4408 + 2 * n })),
 ];
 
 // Where the studio is looking: one device, or all of them side by side. Kept in the URL (?d=emu2, ?v=all) so a reload
