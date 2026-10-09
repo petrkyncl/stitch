@@ -130,16 +130,24 @@ function Registry({ capabilities, granted, onApprove, onRevoke, onBreak }: Omit<
               <span>{c.tests?.total ? (c.tests.passed === c.tests.total ? "Test passed" : "Test failed") : "Not tested, it would change something"}</span>
               <span>{c.steps} steps</span>
               <span>{repaired ? `Version ${c.version}, repaired after an app change` : `Version ${c.version}`}</span>
-              {asks && <span className="text-dawn">{c.approved ? "Runs without asking: you chose Always allow" : "Asks you before every run: it sends, pays or deletes"}</span>}
             </div>
+
+            {asks && (
+              // The one right Stitch never grants itself: set it ahead of time, take it back any time.
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-night px-3 py-2">
+                <span className="text-sm text-muted">Before it sends, pays or deletes</span>
+                <div role="radiogroup" aria-label={`Permission for ${c.title}`} className="flex rounded-lg border border-line p-0.5 text-sm">
+                  <button type="button" role="radio" aria-checked={!c.approved} onClick={() => c.approved && onRevoke(c.name)}
+                    className={`rounded-md px-3 py-1 ${!c.approved ? "bg-night-3 text-flesh" : "text-muted hover:text-flesh"}`}>Ask every time</button>
+                  <button type="button" role="radio" aria-checked={c.approved} onClick={() => !c.approved && onApprove(c.name)}
+                    className={`rounded-md px-3 py-1 ${c.approved ? "bg-dawn font-medium text-night" : "text-muted hover:text-flesh"}`}>Always allow</button>
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
               <code className="font-mono text-xs text-muted">{c.name}({c.params.join(", ")})</code>
-              {needsApproval
-                ? <button type="button" onClick={() => onApprove(c.name)} className="rounded-lg border border-dawn px-3 py-1.5 text-sm font-semibold text-dawn hover:bg-dawn/10">Always allow</button>
-                : c.approved
-                ? <button type="button" onClick={() => onRevoke(c.name)} className="rounded-lg border border-thread px-3 py-1.5 text-sm text-thread hover:bg-thread hover:text-night" title="Take the right back: it asks again before every run">Revoke</button>
-                : <button type="button" onClick={() => onBreak(c.name)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:text-flesh" title="Pretend the app changed, to watch Stitch repair itself">Simulate app update</button>}
+              <button type="button" onClick={() => onBreak(c.name)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:text-flesh" title="Pretend the app changed, to watch Stitch repair itself">Simulate app update</button>
             </div>
           </article>
         );

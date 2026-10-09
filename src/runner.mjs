@@ -26,6 +26,7 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
   let pkg = '';
   let justLaunched = false;
   let irreversible = false; // set once a step that sends, pays or deletes has run
+  let before = new Set(); // texts on screen right before that step
   for (let i = 0; i < cap.steps.length; i++) {
     const s = cap.steps[i];
     const say = text => emit('step', { kind: 'run', text });
@@ -100,6 +101,7 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
         if (!allowed) return { ok: false, held: true, step: i, reason: `"${s.label}" was not allowed` };
       }
       say(`tap "${sel.labelHas || s.label}"`);
+      if (s.external) before = new Set(seen.map(phone.label).filter(Boolean)); // to tell the answer from what was there
       await phone.tap(node);
       if (s.external) irreversible = true;
       await phone.settle(pkg);
@@ -133,7 +135,12 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
     const want = padTimes(render(cap.sent, params));
     for (let i = 0; i < 10; i++) {
       const screen = await phone.observe(pkg);
-      if (screenHasText(screen.nodes.filter(n => !n.editable), want)) return { ok: true, verified: `"${want}" is on screen as sent` };
+      if (screenHasText(screen.nodes.filter(n => !n.editable), want)) {
+        if (!cap.reply) return { ok: true, verified: `"${want}" is on screen as sent` };
+        emit('step', { kind: 'run', text: 'waiting for the answer' });
+        const reply = await readReply(pkg, before, params);
+        return { ok: true, verified: `"${want}" is on screen as sent`, reply };
+      }
       await phone.sleep(300);
     }
     return { ok: false, irreversible, step: cap.steps.length, reason: `"${want}" did not appear outside the input field` };
@@ -158,4 +165,24 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
   // The new item may sit below the visible part of a long list (a person with many alarms); look through it.
   if (await phone.findText(want, pkg)) return { ok: true, verified: want };
   return { ok: false, irreversible, step: cap.steps.length, reason: `"${want}" is not on screen after the last step` };
+}
+
+// What an app answers after a send (a chatbot reply): the texts that were not on screen before, without what was
+// typed and without buttons. Chat apps write the answer out bit by bit, so wait until it stops changing.
+async function readReply(pkg, before, params) {
+  const typed = Object.values(params || {}).map(v => String(v).trim().toLowerCase());
+  let last = '';
+  let steady = 0;
+  const until = Date.now() + 60000;
+  while (Date.now() < until) {
+    const { nodes } = await phone.observe(pkg);
+    const fresh = nodes
+      .filter(n => !n.clickable && !n.editable && phone.label(n) && !before.has(phone.label(n)))
+      .map(n => phone.label(n).trim())
+      .filter(t => t.length > 2 && !typed.includes(t.toLowerCase()));
+    const text = [...new Set(fresh)].join('\n');
+    if (text && text === last) { if (++steady >= 3) return text; } else { steady = 0; last = text; }
+    await phone.sleep(700);
+  }
+  return last;
 }
