@@ -4,7 +4,7 @@
 Stitch
 
 ## One-line pitch
-Learns the phone skills it lacks, tests and installs them, reuses them for $0. Skills grow; authority does not.
+An Android agent that learns a task in any app once, turns it into tested code, and repeats it in seconds with no AI cost.
 
 ## What it does (problem, who it is for, how)
 Phone automation today is either hand-written per app (brittle scripts, selectors that break with every update) or an LLM driving the screen every single time (slow, expensive, unpredictable). Stitch is for people and small teams who run the same phone tasks again and again, on one phone or a fleet of devices.
