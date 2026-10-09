@@ -110,9 +110,11 @@ function Workspace() {
           <DeviceBar />
         </div>
       </div>
-      <main className={`grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 ${fleet
-        ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] 2xl:grid-cols-[minmax(300px,0.7fr)_minmax(0,2fr)_minmax(320px,0.7fr)]"
-        : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]"}`}>
+      {/* With the emulators, their grid takes only the width the screens need and the chat gets the rest. */}
+      <main className={`grid min-h-0 flex-1 grid-cols-1 ${fleet
+        ? "gap-5 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_auto] 2xl:grid-cols-[minmax(0,1fr)_auto_minmax(280px,22rem)]"
+        : "gap-8 px-8 py-6"
+        + " lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]"}`}>
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
             <Chat runs={(state?.runs ?? []).filter(r => (r.chat ?? 1) === shown)} live={shown === current ? live : null} sessions={[]} now={now} capabilities={state?.capabilities ?? []}

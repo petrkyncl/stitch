@@ -13,9 +13,9 @@ export function Fleet() {
   const { device } = usePlace();
   const cols = EMULATORS.length > 4 ? Math.ceil(EMULATORS.length / 2) : EMULATORS.length; // two rows: 6 sit as 3 and 3
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex items-center justify-end"><BoxesForAll /></div>
-      <div className="grid min-h-0 flex-1 auto-rows-fr gap-4 overflow-y-auto" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+      <div className="grid min-h-0 gap-2 overflow-y-auto" style={{ gridTemplateColumns: `repeat(${cols}, auto)` }}>
         {EMULATORS.map(d => <Tile key={d.id} d={d} active={d.id === device.id} />)}
       </div>
     </div>
@@ -52,17 +52,16 @@ function Tile({ d, active }: { d: DeviceDef; active: boolean }) {
   const h = status?.height || 2340;
   return (
     <button type="button" onClick={() => goTo({ device: d.id })} aria-pressed={active} title={`Chat with ${d.label}`}
-      className={`flex min-h-0 flex-col gap-2 rounded-2xl border p-3 text-left transition-colors ${active ? "border-dawn/70 bg-night-2" : "border-line hover:border-muted"}`}>
-      <span className="flex items-center gap-2 text-sm">
+      className={`flex w-min flex-col gap-1.5 rounded-xl border p-1.5 text-left transition-colors ${active ? "border-dawn/70 bg-night-2" : "border-transparent hover:border-line"}`}>
+      <span className="flex w-0 min-w-full items-center gap-2 text-sm">
         <StateDot status={status} />
-        <span className="font-medium">{d.label}</span>
+        <span className="shrink-0 font-medium">{d.label}</span>
         {status?.model && <span className="truncate text-muted">{status.model}</span>}
       </span>
-      <span className="flex min-h-0 flex-1 justify-center">
-        <span className="relative block h-full overflow-hidden rounded-xl border border-line bg-black" style={{ aspectRatio: `${w} / ${h}` }}>
+      {/* Sized by the window's height (two rows of screens), so a tile is exactly as wide as its screen. */}
+      <span className="relative block overflow-hidden rounded-lg border border-line bg-black" style={{ height: "calc((100dvh - 19rem) / 2)", aspectRatio: `${w} / ${h}` }}>
           <LiveScreen src={status && !status.offline && status.connected ? `${videoUrl(d)}?s=${status.started ?? 0}` : null} label={d.label}
             offline={!!status && (status.offline || !status.connected)} hint={d.id === "phone" ? "npm start" : "scripts/emulators.sh up"} />
-        </span>
       </span>
       <Activity a={activity} />
     </button>
@@ -95,9 +94,9 @@ function useActivity(d: DeviceDef, enabled: boolean): Act {
 }
 
 function Activity({ a }: { a: Act }) {
-  if (!a?.task) return <span className="h-10 text-sm text-muted">Idle</span>;
+  if (!a?.task) return <span className="h-9 text-xs text-muted">Idle</span>;
   return (
-    <span className="flex h-10 flex-col text-sm leading-snug">
+    <span className="flex h-9 w-0 min-w-full flex-col text-xs leading-snug">
       <span className="truncate">{a.task}</span>
       {a.busy
         ? <span className="flex items-center gap-1.5 truncate text-muted"><span className="size-1.5 shrink-0 animate-pulse rounded-full bg-dawn" />{a.step || "Starting"}</span>

@@ -289,7 +289,13 @@ export async function globalAction(name) {
 
 // Accessibility action on a node: long_click, scroll_forward, scroll_backward, expand, collapse, dismiss, ime_enter.
 export async function nodeAction(node, action) {
-  if (node.gen !== undefined && await handsAvailable()) return hands('/node', { id: node.id, gen: node.gen, action });
+  if (node.gen !== undefined && await handsAvailable()) {
+    try { return await hands('/node', { id: node.id, gen: node.gen, action }); } catch (e) {
+      // Some elements (Google Clock's alarm cards) take a held finger but not the long-click action: hold it instead.
+      if (action === 'long_click') return hands('/swipe', { x1: node.cx, y1: node.cy, x2: node.cx, y2: node.cy, ms: 700 });
+      throw e;
+    }
+  }
   if (action === 'ime_enter') return adb(['shell', 'input', 'keyevent', '66']);
   if (action === 'long_click') return adb(['shell', 'input', 'swipe', String(node.cx), String(node.cy), String(node.cx), String(node.cy), '700']);
   throw new Error(`${action} needs Stitch Hands`);
