@@ -86,7 +86,8 @@ export class Agent {
   }
 
   // `app` (optional) is the package the person chose; it narrows routing and skips guessing the app.
-  async handle(task, { app } = {}) {
+  // `capability` + `params` run one installed capability directly (from the MCP server), skipping routing.
+  async handle(task, { app, capability, params } = {}) {
     if (this.busy) throw new Error('Stitch is already working on a task');
     this.busy = true;
     const meter = new Meter();
@@ -126,11 +127,15 @@ export class Agent {
     emit('task', { task, session: this.session, id: record.id });
     try {
       // "Do this and then that" becomes separate tasks, each one routed, run or learned on its own.
-      const tasks = await this.split(task, meter, emit);
+      const direct = capability && this.registry.get(capability);
+      if (capability && !direct) throw new Error(`No installed capability ${capability}`);
+      const tasks = direct ? [task] : await this.split(task, meter, emit);
       const results = [];
       for (const [i, one] of tasks.entries()) {
         if (tasks.length > 1) emit('step', { kind: 'plan', text: `Task ${i + 1} of ${tasks.length}: ${one}` });
-        const res = await this.one(one, meter, emit, tasks.length === 1 ? app : undefined);
+        const res = direct
+          ? await this.useExisting({ cap: direct, params: { ...Object.fromEntries((direct.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default])), ...params } }, one, meter, emit)
+          : await this.one(one, meter, emit, tasks.length === 1 ? app : undefined);
         results.push(res);
         if (!res.ok) break;
       }

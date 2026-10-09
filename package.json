@@ -6,6 +6,11 @@
   "description": "A phone agent that builds, tests and installs its own Android capabilities.",
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.mjs",
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node --test \"test/*.test.mjs\"",
+    "mcp": "node mcp/server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.5"
   }
 }

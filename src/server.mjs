@@ -53,11 +53,16 @@ const server = http.createServer(async (req, res) => {
       return res.end(png);
     }
     if (req.method === 'POST' && url.pathname === '/api/task') {
-      const { task, app } = await body(req);
+      const { task, app, capability, params } = await body(req);
       if (!task?.trim()) return json(res, 400, { error: 'Write a task first' });
       if (agent.busy) return json(res, 409, { error: 'Stitch is still working on the previous task' });
-      agent.handle(task.trim(), { app: typeof app === 'string' && /^[\w.]+$/.test(app) ? app : undefined });
-      return json(res, 202, { ok: true });
+      const id = `${Date.now()}`;
+      agent.handle(task.trim(), {
+        app: typeof app === 'string' && /^[\w.]+$/.test(app) ? app : undefined,
+        capability: typeof capability === 'string' ? capability : undefined,
+        params: params && typeof params === 'object' ? Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) : undefined,
+      });
+      return json(res, 202, { ok: true, after: Number(id) - 1 }); // runs that start after this belong to this request
     }
     const frame = url.pathname.match(/^\/api\/frame\/(\d+)\/(\d+)\.jpg$/);
     if (frame) {
