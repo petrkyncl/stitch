@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, engineUrl, usePlace, type Run } from "@/lib/engine";
+import { api, engineUrl, usePlace, type Decision, type Run } from "@/lib/engine";
 import { DeviceBar } from "./device-bar";
 import { Fleet, EMULATORS } from "./fleet";
 import { useEngine } from "./use-engine";
@@ -50,20 +50,38 @@ function Workspace() {
         const before = state?.runs.length ?? 0;
         await api("/api/task", { task: text, app: app ?? undefined });
         setTask(""); recall.current = -1; setViewing(null);
-        setNote(`${here.label} first, then the other ${others.length}`);
+        type Peek = { busy: boolean; current?: { events: { type: string }[] } | null; runs: { ok?: boolean }[] };
+        const peek = () => api<Peek>("/api/state").catch(() => null);
+        // Its first step tells whether it already knows how: then every emulator runs it at once. If it has to learn,
+        // the others wait for that one capability instead of each learning (and paying) on its own.
+        let learning = false;
+        for (let i = 0; i < 25; i++) {
+          await new Promise(r => setTimeout(r, 200));
+          const s = await peek();
+          const firstStep = s?.current?.events?.[0]?.type;
+          if (firstStep) { learning = firstStep === "gap"; break; }
+          if (s && !s.busy && s.runs.length > before) break; // already finished
+        }
+        if (!learning) {
+          setNote(`Running on all ${others.length + 1}`);
+          await Promise.allSettled(others.map(send));
+          setTimeout(() => setNote(""), 5000);
+          return;
+        }
+        setNote(`${here.label} is learning this. The other ${others.length} will run it as code once it works.`);
         const until = Date.now() + 6 * 60 * 1000;
         let first: { ok?: boolean } | undefined;
         for (;;) {
           await new Promise(r => setTimeout(r, 800));
-          const s = await api<{ busy: boolean; runs: { ok?: boolean }[] }>("/api/state").catch(() => null);
+          const s = await peek();
           if (s && !s.busy && s.runs.length > before) { first = s.runs.at(-1); break; }
           if (Date.now() > until) break;
         }
         // Only what worked is spread: a failure here would make every other emulator try (and pay) on its own.
         if (!first?.ok) { setNote(`It did not work on ${here.label}, so the others were not asked`); setTimeout(() => setNote(""), 6000); return; }
-        setNote(`Now on the other ${others.length}`);
+        setNote(`Learned. Now running on the other ${others.length} as code`);
         await Promise.allSettled(others.map(send));
-        setTimeout(() => setNote(""), 4000);
+        setTimeout(() => setNote(""), 5000);
         return;
       } else {
         await api("/api/task", { task: text, app: app ?? undefined });
@@ -96,6 +114,20 @@ function Workspace() {
   const current = state?.chat ?? 1;
   const shown = viewing ?? current;
   const chatTitle = (state?.runs ?? []).find(r => (r.chat ?? 1) === shown)?.task ?? "New chat";
+  // With the emulators, one answer covers every emulator that waits to be allowed the same capability.
+  const decide = (decision: Decision) => {
+    const capability = state?.pending?.capability;
+    act("/api/permission", { decision });
+    if (!fleet || !capability) return;
+    for (const d of EMULATORS.filter(e => e.id !== here.id)) {
+      fetch(engineUrl(d) + "/api/state").then(r => r.json())
+        .then((s: { pending?: { capability?: string } | null }) => {
+          if (s.pending?.capability === capability) {
+            return fetch(engineUrl(d) + "/api/permission", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision }) });
+          }
+        }).catch(() => {});
+    }
+  };
   const act = (path: string, body?: unknown) => api(path, body ?? {}).then(refresh).catch(err => setError(err.message));
 
   return (
@@ -118,7 +150,7 @@ function Workspace() {
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
             <Chat runs={(state?.runs ?? []).filter(r => (r.chat ?? 1) === shown)} live={shown === current ? live : null} sessions={[]} now={now} capabilities={state?.capabilities ?? []}
-              pending={state?.pending ?? null} onDecide={decision => act("/api/permission", { decision })} />
+              pending={state?.pending ?? null} onDecide={decide} />
           </div>
           <form onSubmit={submit} className="flex flex-col gap-1 rounded-2xl border border-line bg-night-2 px-3 pt-2.5 pb-2 transition-colors focus-within:border-dawn/50">
             <label htmlFor="task" className="sr-only">Ask the agent</label>
