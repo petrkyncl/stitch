@@ -1,7 +1,7 @@
 // Installed capabilities live on disk, one folder each, every version kept.
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { matchPatterns } from './compiler.mjs';
+import { cleanParams, matchPatterns } from './compiler.mjs';
 
 // One registry can serve several devices (STITCH_REGISTRY): what one learns, the others can run.
 const ROOT = path.resolve(process.env.STITCH_REGISTRY || 'registry');
@@ -60,10 +60,7 @@ export class Registry {
       const params = matchPatterns(cap.patterns, task);
       if (params) {
         const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));
-        // A request may quote its values ("saying \"hi\""); the quotes are not part of the message.
-        // "... and give me the result" asks for the answer back; it is not part of what gets sent.
-        const tail = cap.reply ? /\s+and\s+(give|tell|show|send)\s+me\s+(the\s+)?(result|answer|reply|response)s?\.?$/i : null;
-        const clean = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v).replace(tail || /$^/, '').trim().replace(/^["'\u201c\u201d]+|["'\u201c\u201d]+$/g, '').trim()]));
+        const clean = cleanParams(params, cap.reply);
         return { cap, params: { ...defaults, ...clean } };
       }
     }

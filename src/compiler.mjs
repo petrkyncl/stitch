@@ -50,6 +50,16 @@ export function toRegExp(p) {
 
 const escapeLiteral = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
 
+// "... and give me the result" asks for the answer back; it is not part of what gets sent. Request values may be quoted.
+const REPLY_TAIL = /\s+and\s+(give|tell|show|send)\s+me\s+(the\s+)?(result|answer|reply|response)s?\.?$/i;
+export function cleanParams(params, reply) {
+  return Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v).replace(reply ? REPLY_TAIL : /$^/, '').trim()
+    .replace(/^["'\u201c\u201d]+|["'\u201c\u201d]+$/g, '').trim()]));
+}
+
+// A prompt typed as "Write a poem about Prague." is the same text as "write a poem about Prague".
+const sameText = (a, b) => { const f = x => fold(padTimes(x)).replace(/[\s.!?]+$/, '').trim(); return f(a) === f(b); };
+
 export function matchPatterns(patterns, task) {
   for (const p of patterns || []) {
     let re;
@@ -184,7 +194,7 @@ export function validate(spec, task, trace, expect) {
   const problems = [];
   if (!spec.name || !/^[a-z0-9_]+\.[a-z0-9_]+$/.test(spec.name)) problems.push('name must look like app.verb_object');
   const params = (spec.params || []).map(p => p.name);
-  const matched = matchPatterns(spec.patterns, task);
+  const matched = matchPatterns(spec.patterns, task) && cleanParams(matchPatterns(spec.patterns, task), spec.reply);
   // Params the request did not mention take their default.
   const got = matched && { ...Object.fromEntries((spec.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default])), ...matched };
   if (!got) problems.push(`no pattern matches the original request "${task}". Your patterns: ${JSON.stringify(spec.patterns)}. They are JavaScript RegExp sources tested case-insensitively with String.match, named groups like (?<hour>\\d{1,2})`);
@@ -224,7 +234,7 @@ export function validate(spec, task, trace, expect) {
         problems.push(`step ${i} types "${s.text}" from the request as a constant; make it a param and type {{param}}`);
       }
       if (t === undefined) problems.push(`missing typed template for step ${i}`);
-      else if (fold(padTimes(render(t, got))) !== fold(padTimes(s.text))) {
+      else if (!sameText(render(t, got), s.text)) {
         const rendered = render(t, got);
         const tooMuch = fold(rendered).startsWith(fold(s.text)) ? `; the pattern captured too much: end the group where "${s.text}" ends (lazy group) and allow the rest, e.g. "${rendered.slice(s.text.length).trim()}", as an optional tail` : '';
         problems.push(`step ${i} renders "${rendered}" but the trace typed "${s.text}"${tooMuch}`);

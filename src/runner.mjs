@@ -168,7 +168,8 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
   if (cap.sent) {
     // Something was typed and then sent: the text must now show outside the input field, as a sent message.
     const want = padTimes(render(cap.sent, params));
-    for (let i = 0; i < 10; i++) {
+    // A first message can take a while to show: Claude opens a new conversation for it first.
+    for (const end = Date.now() + 12000; Date.now() < end;) {
       const screen = await phone.observe(pkg);
       if (screenHasText(screen.nodes.filter(n => !n.editable), want)) {
         if (!cap.reply) return { ok: true, verified: `"${want}" is on screen as sent` };
