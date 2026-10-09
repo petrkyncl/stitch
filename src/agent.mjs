@@ -6,7 +6,7 @@ import { run } from './runner.mjs';
 import { review, GRANTED } from './policy.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { titleFrom } from './registry.mjs';
-import { globalAction } from './adb.mjs';
+import { globalAction, installedApps } from './adb.mjs';
 
 // Phone buttons the agent has from the start. Requests for them run directly, with no model and nothing to learn.
 const BUILTINS = [
@@ -193,12 +193,15 @@ export class Agent {
 
   // Free first (patterns compiled into each capability), then one small model call.
   async route(task, meter, emit, app) {
-    const hit = this.registry.match(task, app);
+    // The registry may be shared with other devices: read it fresh, and only consider apps this device has.
+    await this.registry.load();
+    const installed = new Set((await installedApps().catch(() => [])).map(a => a.package));
+    const hit = this.registry.match(task, app, installed);
     if (hit) {
       emit('route', { text: `Matched ${hit.cap.name} v${hit.cap.version} by pattern, no model call`, via: 'pattern' });
       return hit;
     }
-    const caps = this.registry.all().filter(c => !app || c.manifest?.app === app);
+    const caps = this.registry.all().filter(c => (!app || c.manifest?.app === app) && (!installed.size || !c.manifest?.app || installed.has(c.manifest.app)));
     if (!caps.length) return null;
     const out = await askJSON(meter,
       'Decide whether one of the installed capabilities can do the task. Return {"capability": "<name>" or null, "params": {...}}. Only choose a capability whose description really covers the task, and fill every param.',
@@ -300,6 +303,11 @@ export class Agent {
   }
 
   async install(spec, previous, reason, tests) {
+    // Same name already learned for a different app (Samsung Clock vs Google Clock on another device): keep both.
+    const other = !previous && this.registry.get(spec.name);
+    if (other && other.manifest?.app && spec.manifest?.app && other.manifest.app !== spec.manifest.app) {
+      spec = { ...spec, name: `${spec.name}_${spec.manifest.app.split('.').pop().replace(/\W/g, '')}` };
+    }
     const verdict = review(spec.manifest);
     const version = (previous?.version || this.registry.get(spec.name)?.version || 0) + 1;
     const cap = {

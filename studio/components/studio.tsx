@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, goTo, usePlace, type Run } from "@/lib/engine";
+import { api, engineUrl, usePlace, type Run } from "@/lib/engine";
 import { DeviceBar } from "./device-bar";
-import { DeviceWall } from "./device-wall";
+import { Fleet, EMULATORS } from "./fleet";
 import { useEngine } from "./use-engine";
 import { Chat } from "./chat";
 import { PhonePanel } from "./phone-panel";
@@ -18,30 +18,17 @@ const EXAMPLES = [
 ];
 
 export default function Studio() {
-  const { device, view } = usePlace();
-  if (view === "all") {
-    return (
-      <div className="flex h-full min-h-0 flex-col text-base">
-        <Header><DeviceBar /></Header>
-        <DeviceWall onOpen={id => goTo({ device: id, view: "one" })} />
-      </div>
-    );
-  }
+  const { device } = usePlace();
   // Keyed by device: switching starts a fresh workspace on that device's engine (its chat, state and live screen).
   return <Workspace key={device.id} />;
 }
 
-function Header({ children }: { children: React.ReactNode }) {
-  return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line px-6">
-      <span className="font-display text-2xl leading-none font-black">Stitch</span>
-      <div className="flex flex-wrap items-center gap-3 text-sm">{children}</div>
-    </header>
-  );
-}
-
 function Workspace() {
   const { state, live, device, offline, now, epoch, refresh } = useEngine();
+  const { view, device: here } = usePlace();
+  const fleet = view === "all";
+  const [everyone, setEveryone] = useState(false); // "All emulators": learn on the selected one, then run on all
+  const [note, setNote] = useState("");
   const [task, setTask] = useState("");
   const [app, setApp] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -52,7 +39,37 @@ function Workspace() {
     const text = task.trim();
     if (!text) return;
     setError("");
-    try { await api("/api/task", { task: text, app: app ?? undefined }); setTask(""); recall.current = -1; setViewing(null); } catch (err) { setError((err as Error).message); }
+    try {
+      if (fleet && everyone) {
+        // Learn once, then run everywhere: the selected emulator goes first (it learns the capability if it has to),
+        // and only then do the others get the request, so they run it as code with no model calls.
+        const body = JSON.stringify({ task: text, app: app ?? undefined });
+        const send = (d: typeof here) => fetch(engineUrl(d) + "/api/task", { method: "POST", headers: { "content-type": "application/json" }, body })
+          .then(r => { if (!r.ok) throw new Error(); });
+        const others = EMULATORS.filter(d => d.id !== here.id);
+        const before = state?.runs.length ?? 0;
+        await api("/api/task", { task: text, app: app ?? undefined });
+        setTask(""); recall.current = -1; setViewing(null);
+        setNote(`${here.label} first, then the other ${others.length}`);
+        const until = Date.now() + 6 * 60 * 1000;
+        let first: { ok?: boolean } | undefined;
+        for (;;) {
+          await new Promise(r => setTimeout(r, 800));
+          const s = await api<{ busy: boolean; runs: { ok?: boolean }[] }>("/api/state").catch(() => null);
+          if (s && !s.busy && s.runs.length > before) { first = s.runs.at(-1); break; }
+          if (Date.now() > until) break;
+        }
+        // Only what worked is spread: a failure here would make every other emulator try (and pay) on its own.
+        if (!first?.ok) { setNote(`It did not work on ${here.label}, so the others were not asked`); setTimeout(() => setNote(""), 6000); return; }
+        setNote(`Now on the other ${others.length}`);
+        await Promise.allSettled(others.map(send));
+        setTimeout(() => setNote(""), 4000);
+        return;
+      } else {
+        await api("/api/task", { task: text, app: app ?? undefined });
+      }
+      setTask(""); recall.current = -1; setViewing(null);
+    } catch (err) { setError((err as Error).message); }
   }
   const stop = () => api("/api/stop", {}).catch(err => setError(err.message));
   // Esc stops the agent, like stopping a person mid-task.
@@ -93,7 +110,9 @@ function Workspace() {
           <DeviceBar />
         </div>
       </div>
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]">
+      <main className={`grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 ${fleet
+        ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] 2xl:grid-cols-[minmax(300px,0.7fr)_minmax(0,2fr)_minmax(320px,0.7fr)]"
+        : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]"}`}>
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
             <Chat runs={(state?.runs ?? []).filter(r => (r.chat ?? 1) === shown)} live={shown === current ? live : null} sessions={[]} now={now} capabilities={state?.capabilities ?? []}
@@ -106,9 +125,18 @@ function Workspace() {
               style={{ outline: "none" }} // the composer box shows focus, not the input inside it
               className="min-w-0 bg-transparent px-1 py-1.5 text-base text-flesh placeholder:text-muted/70" />
             <div className="flex items-center gap-2">
+              {fleet && (
+                <div role="radiogroup" aria-label="Send to" className="flex rounded-lg border border-line p-0.5 text-sm">
+                  <button type="button" role="radio" aria-checked={!everyone} onClick={() => setEveryone(false)}
+                    className={`rounded-md px-2.5 py-0.5 ${!everyone ? "bg-night-3 text-flesh" : "text-muted hover:text-flesh"}`}>This emulator</button>
+                  <button type="button" role="radio" aria-checked={everyone} onClick={() => setEveryone(true)}
+                    className={`rounded-md px-2.5 py-0.5 ${everyone ? "bg-dawn font-medium text-night" : "text-muted hover:text-flesh"}`}>All emulators</button>
+                </div>
+              )}
               <AppPicker value={app} onChange={setApp} />
               <Examples onPick={setTask} />
               {error && <span className="truncate text-sm text-thread">{error}</span>}
+              {note && <span className="truncate text-sm text-dawn">{note}</span>}
               <span className="flex-1" />
               {busy
                 ? <button type="button" onClick={stop} title="Stop (Esc)" aria-label="Stop"
@@ -123,10 +151,15 @@ function Workspace() {
           </form>
         </section>
 
-        <section className="flex min-h-[640px] flex-col lg:min-h-0" aria-label="Phone">
-          <PhonePanel device={device} epoch={epoch} boxes={state?.boxes} offline={offline} />
-        </section>
+        {fleet ? (
+          <section className="min-h-[640px] lg:min-h-0" aria-label="Emulators"><Fleet /></section>
+        ) : (
+          <section className="flex min-h-[640px] flex-col lg:min-h-0" aria-label="Phone">
+            <PhonePanel device={device} epoch={epoch} boxes={state?.boxes} offline={offline} />
+          </section>
+        )}
 
+        {/* The capabilities are shared by every device, so they are on the right in both places. */}
         <section className="min-h-0 overflow-y-auto lg:col-span-2 2xl:col-span-1" aria-label="Cost and capabilities">
           <Insights
             runs={state?.runs ?? []}

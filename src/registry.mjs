@@ -3,7 +3,8 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { matchPatterns } from './compiler.mjs';
 
-const ROOT = path.resolve('registry');
+// One registry can serve several devices (STITCH_REGISTRY): what one learns, the others can run.
+const ROOT = path.resolve(process.env.STITCH_REGISTRY || 'registry');
 
 export class Registry {
   constructor() { this.caps = new Map(); }
@@ -32,9 +33,11 @@ export class Registry {
   all() { return [...this.caps.values()]; }
 
   // Free routing: regex patterns written at compile time, no model call.
-  match(task, app) {
+  // `installed` (package names) skips capabilities for apps this device does not have, e.g. Samsung Clock on a Pixel.
+  match(task, app, installed) {
     for (const cap of this.caps.values()) {
       if (app && cap.manifest?.app !== app) continue;
+      if (installed?.size && cap.manifest?.app && !installed.has(cap.manifest.app)) continue;
       const params = matchPatterns(cap.patterns, task);
       if (params) {
         const defaults = Object.fromEntries((cap.params || []).filter(p => p.default !== undefined).map(p => [p.name, p.default]));

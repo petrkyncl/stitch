@@ -70,9 +70,11 @@ export function findBySelector(nodes, sel) {
   return matches.find(n => n.editable) || matches.find(n => n.clickable) || matches[0] || null;
 }
 
+// Times count with or without the leading zero: "07:45" is found on a clock that shows "7:45 AM".
 export function screenHasText(nodes, text) {
   const t = fold(text);
-  return nodes.some(n => fold(label(n)).includes(t));
+  const short = t.replace(/(^|\D)0(\d:\d\d)/g, '$1$2');
+  return nodes.some(n => { const l = fold(label(n)); return l.includes(t) || (short !== t && l.includes(short)); });
 }
 
 // The model sometimes describes the proof instead of quoting it. Accept the whole text, a quoted part,

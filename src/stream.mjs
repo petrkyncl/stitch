@@ -73,6 +73,7 @@ async function start() {
     pipeline = { server, sock, ff };
     const restart = () => {
       if (!pipeline || pipeline.sock !== sock) return;
+      prepared = false; // a server that died (or was never there) gets pushed again
       stop();
       if (viewers.size) setTimeout(start, 500);
     };
@@ -81,6 +82,7 @@ async function start() {
   } catch (e) {
     console.error('stream:', e.message);
     pipeline = null;
+    prepared = false; // push the server again next time: a failed start may have left the device without it
     if (viewers.size) setTimeout(start, 2000);
   }
 }
