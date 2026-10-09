@@ -1,5 +1,5 @@
 // The Frankenstein loop: find a capability or notice the gap, build it, test it, install it, reuse it, repair it.
-import { Meter, askJSON, askTool, LIMITS } from './llm.mjs';
+import { Meter, askTool, LIMITS } from './llm.mjs';
 import { explore } from './explorer.mjs';
 import { compile, matchPatterns } from './compiler.mjs';
 import { run } from './runner.mjs';
@@ -27,7 +27,7 @@ const SPLIT = {
         items: {
           type: 'object',
           properties: {
-            task: { type: 'string', description: 'One task in the words of the request. If it uses what the task before it returns, write the literal placeholder {{previous}} exactly where that goes, e.g. "Send Ann a WhatsApp message saying {{previous}}"' },
+            task: { type: 'string', description: 'One task in the words of the request. A question for an AI app is a full instruction: "prompt Claude to write a short poem about Prague". If it uses what the task before it returns, write the literal placeholder {{previous}} exactly where that goes, e.g. "Send Ann a WhatsApp message saying {{previous}}"' },
             uses_previous: { type: 'boolean', description: 'true when this task needs what the task before it returns (an answer, a found place)' },
             returns_result: { type: 'boolean', description: 'true when a later task uses what this task gets back' },
           },
@@ -217,7 +217,8 @@ export class Agent {
     const tasks = (Array.isArray(out.tasks) ? out.tasks : []).slice(0, 5).map(t => {
       let text = String(typeof t === 'string' ? t : t?.task || '').trim();
       if (t?.returns_result && !/give me the (result|answer)/i.test(text)) text += ' and give me the result';
-      if (t?.uses_previous && !text.includes('{{previous}}')) text += ': {{previous}}';
+      if (t?.uses_previous && !text.includes('{{previous}}')) text += ' saying {{previous}}';
+      text = text.replace(/\b(containing|with the text|with)\s+\{\{previous\}\}/i, 'saying {{previous}}'); // the words people use for messages
       return text;
     }).filter(Boolean);
     if (tasks.length < 2) return [task];
@@ -237,9 +238,14 @@ export class Agent {
     }
     const caps = this.registry.all().filter(c => (!app || c.manifest?.app === app) && (!installed.size || !c.manifest?.app || installed.has(c.manifest.app)));
     if (!caps.length) return null;
-    const out = await askJSON(meter,
-      'Decide whether one of the installed capabilities can do the task. Return {"capability": "<name>" or null, "params": {...}}. Only choose a capability whose description really covers the task, and fill every param.',
-      `Task: ${task}\nCapabilities:\n${caps.map(c => `${c.name}(${c.params.map(p => p.name).join(', ')}): ${c.description}`).join('\n')}`);
+    // A forced tool call with the candidates as an enum: the proxy's free-form JSON answers were not reliable here.
+    const out = await askTool(meter,
+      'Decide whether one of the installed capabilities can do the task. Only choose one whose description really covers the task, and fill every param from the task.',
+      `Task, quoted: "${task}"\nCapabilities:\n${caps.map(c => `${c.name}(${c.params.map(p => p.name).join(', ')}): ${c.description}`).join('\n')}`,
+      { name: 'choose', description: 'The capability for the task, or none', parameters: { type: 'object', properties: {
+        capability: { type: 'string', enum: [...caps.map(c => c.name), 'none'] },
+        params: { type: 'object', description: 'Every param of the chosen capability, with its value from the task', additionalProperties: { type: 'string' } },
+      }, required: ['capability'] } });
     const cap = out.capability && this.registry.get(out.capability);
     if (!cap) return null;
     emit('route', { text: `Model routed to ${cap.name} v${cap.version}`, via: 'model' });
