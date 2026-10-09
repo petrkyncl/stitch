@@ -10,7 +10,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 // Raw model answers, to see how the model phrases actions (runs/ is gitignored).
 async function logRaw(obj) {
   await mkdir('runs', { recursive: true });
-  await appendFile('runs/decisions.jsonl', JSON.stringify(obj) + '\n');
+  await appendFile('runs/decisions.jsonl', JSON.stringify({ at: Date.now(), ...obj }) + '\n'); // `at` ties it to a run for reports
 }
 
 const MAX_STEPS = 18;

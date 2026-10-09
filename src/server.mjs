@@ -79,6 +79,10 @@ const server = http.createServer(async (req, res) => {
       return res.end(png);
     }
     // `started` lets a viewer notice an engine restart and reopen its video.
+    if (url.pathname === '/api/report') {
+      const text = await report(url.searchParams.get('run'));
+      return text ? json(res, 200, { text }) : json(res, 404, { error: 'No such run' });
+    }
     if (url.pathname === '/api/device') return json(res, 200, { ...(await deviceInfo()), started: STARTED });
     if (req.method === 'POST' && url.pathname === '/api/input') {
       // Coordinates arrive normalized (0..1) from the video, so the studio never needs the phone's resolution.
@@ -118,3 +122,40 @@ http.createServer((req, res) => {
   if (new URL(req.url, 'http://localhost').pathname === '/stream.mjpg') return serveStream(req, res);
   res.writeHead(404); res.end();
 }).listen(STREAM_PORT, '127.0.0.1', () => console.log(`Stitch video on http://127.0.0.1:${STREAM_PORT}/stream.mjpg`));
+
+// Everything needed to work out afterwards why a run went wrong, as one text: the run and its steps with times, the
+// capability it used or built, the model's raw decisions during it, the screen now, models and code version.
+// Also saved to runs/reports/<run>.md, so it can be read from disk instead of pasted.
+async function report(id) {
+  const r = agent.runs.find(x => x.id === id) || (agent.current?.id === id ? agent.current : null);
+  if (!r) return null;
+  const { readFile, writeFile, mkdir } = await import('node:fs/promises');
+  const { execFileSync } = await import('node:child_process');
+  const end = r.at + (r.ms || Date.now() - r.at) + 5000;
+  const t = at => new Date(at).toTimeString().slice(0, 8) + '.' + String(at % 1000).padStart(3, '0');
+  const decisions = (await readFile('runs/decisions.jsonl', 'utf8').catch(() => '')).split('\n').filter(Boolean)
+    .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(d => d?.at >= r.at - 1000 && d.at <= end);
+  const capName = r.capability?.split(' + ').at(-1)?.split(' ')[0];
+  const cap = capName ? await readFile(`registry/${capName}/capability.json`, 'utf8').catch(() => '') : '';
+  let screen = '';
+  try { const { compact } = await import('./ui.mjs'); const { observe } = await import('./adb.mjs'); const o = await observe(); screen = `${o.pkg}\n${compact(o.nodes)}`; } catch (e) { screen = `could not read: ${e.message}`; }
+  let commit = '';
+  try { commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* not a checkout */ }
+  const text = [
+    `# Stitch report ${r.id}`,
+    `request: ${r.task}`,
+    `when: ${new Date(r.at).toISOString()}  session ${r.session}  app ${r.app || 'any'}`,
+    `result: ${r.path || 'running'} ok=${!!r.ok}${r.error ? `  error: ${r.error}` : ''}`,
+    `capability: ${r.capability || '-'}  calls ${r.calls ?? 0}  tokens ${(r.tokensIn ?? 0) + (r.tokensOut ?? 0)}  cost $${(r.cost ?? 0).toFixed(4)}  ${((r.ms ?? 0) / 1000).toFixed(1)} s`,
+    `models: ${model} / learning ${exploreModel}  code ${commit}`,
+    '', '## Steps',
+    ...r.events.map((e, i) => `${t(e.at)} +${e.at - (r.events[i - 1]?.at ?? r.at)}ms ${e.type}${e.kind ? `/${e.kind}` : ''}: ${e.text || ''}${e.why ? `  (why: ${e.why})` : ''}`),
+    '', `## Model decisions (${decisions.length})`,
+    ...decisions.map(d => `${t(d.at)} ${JSON.stringify({ ...d, at: undefined })}`),
+    '', `## Capability ${capName || '-'}`, cap || '(none)',
+    '', '## Screen now', screen,
+  ].join('\n');
+  await mkdir('runs/reports', { recursive: true });
+  await writeFile(`runs/reports/${r.id}.md`, text);
+  return text;
+}

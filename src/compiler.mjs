@@ -1,5 +1,6 @@
 // Turns one explored trace into a reusable capability: parameters, trigger patterns,
 // templated steps, a success check and a test with different inputs.
+import { appendFile } from 'node:fs/promises';
 import { askTool, exploreModel } from './llm.mjs';
 import { manifestFor } from './policy.mjs';
 
@@ -122,6 +123,7 @@ export async function compile({ task, trace, expect, meter, emit, previous }) {
       `Original request, quoted: "${task}"\nSuccess text seen: ${expect || '(none, the last step was held before an external action)'}\n` +
       (previous ? `This replaces ${previous.name} v${previous.version}; keep its name and params.\n` : '') +
       `Trace:\n${JSON.stringify(steps, null, 1)}${feedback}`, TOOL, { model: exploreModel })); // part of learning: once per capability
+    appendFile('runs/decisions.jsonl', JSON.stringify({ at: Date.now(), compile: attempt + 1, name: spec.name, params: spec.params, patterns: spec.patterns, typed: spec.typed, targets: spec.targets, expect: spec.expect, reply: spec.reply }) + '\n').catch(() => {}); // for reports
     const problems = validate(spec, task, trace, expect);
     if (!problems.length) {
       const program = trace

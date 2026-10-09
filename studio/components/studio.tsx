@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, goTo, usePlace } from "@/lib/engine";
+import { api, goTo, usePlace, type Run } from "@/lib/engine";
 import { DeviceBar } from "./device-bar";
 import { DeviceWall } from "./device-wall";
 import { useEngine } from "./use-engine";
@@ -44,7 +44,7 @@ function Header({ children }: { children: React.ReactNode }) {
 }
 
 function Workspace() {
-  const { state, live, device, offline, sessions, now, epoch, refresh } = useEngine();
+  const { state, live, device, offline, now, epoch, refresh } = useEngine();
   const [task, setTask] = useState("");
   const [app, setApp] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -55,7 +55,7 @@ function Workspace() {
     const text = task.trim();
     if (!text) return;
     setError("");
-    try { await api("/api/task", { task: text, app: app ?? undefined }); setTask(""); recall.current = -1; } catch (err) { setError((err as Error).message); }
+    try { await api("/api/task", { task: text, app: app ?? undefined }); setTask(""); recall.current = -1; setViewing(null); } catch (err) { setError((err as Error).message); }
   }
   const stop = () => api("/api/stop", {}).catch(err => setError(err.message));
   // Esc stops the agent, like stopping a person mid-task.
@@ -77,6 +77,10 @@ function Workspace() {
     recall.current = next;
     setTask(next < 0 ? "" : asked[next]);
   };
+  // Each session is a chat: a fresh memory, its own thread. Older chats can be read again; asking returns to the current one.
+  const [viewing, setViewing] = useState<number | null>(null);
+  const current = state?.session ?? 1;
+  const shown = viewing ?? current;
   const act = (path: string, body?: unknown) => api(path, body ?? {}).then(refresh).catch(err => setError(err.message));
 
   return (
@@ -84,20 +88,17 @@ function Workspace() {
       <Header>
         <DeviceBar />
         {offline && <Chip tone="bad">Engine offline</Chip>}
-        <Chip>Session {state?.session ?? 1}</Chip>
         <Chip tone={state && !state.hasKey ? "bad" : undefined}>
           {state ? (state.exploreModel && state.exploreModel !== state.model ? `learns with ${state.exploreModel}, runs on ${state.model}` : state.model) : "model"}
         </Chip>
-        <button type="button" onClick={() => act("/api/session")} disabled={busy}
-          className="rounded-lg border border-line px-4 py-2 font-sans text-base font-medium hover:border-muted disabled:opacity-50">
-          New session
-        </button>
       </Header>
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]">
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
+          <ChatBar runs={state?.runs ?? []} current={current} shown={shown} busy={busy}
+            onPick={s => setViewing(s === current ? null : s)} onNew={() => { setViewing(null); act("/api/session"); }} />
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
-            <Chat runs={state?.runs ?? []} live={live} sessions={sessions} now={now} capabilities={state?.capabilities ?? []}
+            <Chat runs={(state?.runs ?? []).filter(r => r.session === shown)} live={shown === current ? live : null} sessions={[]} now={now} capabilities={state?.capabilities ?? []}
               pending={state?.pending ?? null} onDecide={decision => act("/api/permission", { decision })} />
           </div>
           <form onSubmit={submit} className="flex flex-col gap-1 rounded-2xl border border-line bg-night-2 px-3 pt-2.5 pb-2 transition-colors focus-within:border-dawn/50">
@@ -166,6 +167,45 @@ function Examples({ onPick }: { onPick: (text: string) => void }) {
         <div className="absolute bottom-full left-0 z-40 mb-2 flex w-96 flex-col overflow-hidden rounded-xl border border-line bg-night-2 py-1 shadow-2xl">
           {EXAMPLES.map(x => (
             <button key={x} type="button" onClick={() => { onPick(x); setOpen(false); }} className="px-3 py-2 text-left text-sm hover:bg-night-3">{x}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The chats: pick an earlier one to read it again, or start a new one (a fresh session; learned capabilities stay).
+function ChatBar({ runs, current, shown, busy, onPick, onNew }: { runs: Run[]; current: number; shown: number; busy: boolean; onPick: (s: number) => void; onNew: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  const chats = new Map<number, Run[]>();
+  for (const r of runs) chats.set(r.session, [...(chats.get(r.session) ?? []), r]);
+  if (!chats.has(current)) chats.set(current, []);
+  const list = [...chats.entries()].sort((a, b) => b[0] - a[0]);
+  const title = (s: number) => chats.get(s)?.[0]?.task ?? "New chat";
+  return (
+    <div ref={box} className="relative flex items-center gap-2">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-night-2">
+        <span className="truncate font-medium">{title(shown)}</span>
+        <span aria-hidden className="text-xs text-muted">▾</span>
+      </button>
+      {shown !== current && <button type="button" onClick={() => onPick(current)} className="text-sm text-dawn hover:underline">Back to the current chat</button>}
+      <span className="flex-1" />
+      <button type="button" onClick={onNew} disabled={busy} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:border-muted disabled:opacity-50">New chat</button>
+      {open && (
+        <div className="absolute top-full left-0 z-40 mt-1 flex max-h-96 w-96 flex-col overflow-y-auto rounded-xl border border-line bg-night-2 py-1 shadow-2xl">
+          {list.map(([s, rs]) => (
+            <button key={s} type="button" onClick={() => { onPick(s); setOpen(false); }}
+              className={`flex flex-col px-3 py-2 text-left hover:bg-night-3 ${s === shown ? "bg-night-3" : ""}`}>
+              <span className="truncate">{title(s)}</span>
+              <span className="text-xs text-muted">{rs.length} {rs.length === 1 ? "task" : "tasks"}{s === current ? " · current" : ""}{rs[0] ? ` · ${new Date(rs[0].at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}` : ""}</span>
+            </button>
           ))}
         </div>
       )}

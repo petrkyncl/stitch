@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { engineUrl, money, secs, type Capability, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
+import { api, engineUrl, money, secs, type Capability, type Decision, type Pending, type Run, type RunEvent } from "@/lib/engine";
 import { AppIcon } from "./app-picker";
 
 type Turn = { kind: "run"; run: Run; live: boolean } | { kind: "session"; session: number; at: number; capabilities: number };
@@ -113,6 +113,7 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
         {run.error && <p className="text-thread">{run.error}</p>}
 
         {run.data && run.data.length > 0 && <DataTable rows={run.data} name={run.task} />}
+        {!live && !run.ok && <Report id={run.id} />}
         <Filmstrip events={run.events} live={live} />
         <Steps events={run.events} />
         {waiting && ask?.pending && <Permission pending={ask.pending} onDecide={ask.onDecide} />}
@@ -289,6 +290,29 @@ export function Permission({ pending, onDecide }: { pending: Pending; onDecide: 
         <button type="button" disabled={!!sent} onClick={() => decide("deny")} className="rounded-lg px-3 py-1 text-sm text-muted hover:bg-night-3 hover:text-flesh disabled:opacity-50">Deny</button>
         <span className="ml-auto text-xs text-muted">cannot be undone</span>
       </div>
+    </div>
+  );
+}
+
+// One click puts everything needed to find out what went wrong on the clipboard (steps with times, the model's raw
+// decisions, the capability, the screen), and the engine keeps the same text in runs/reports/.
+function Report({ id }: { id: string }) {
+  const [state, setState] = useState<"idle" | "busy" | "copied" | "failed">("idle");
+  const copy = async () => {
+    setState("busy");
+    try {
+      const { text } = await api<{ text: string }>(`/api/report?run=${id}`);
+      await navigator.clipboard.writeText(text);
+      setState("copied");
+    } catch { setState("failed"); }
+  };
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <button type="button" onClick={copy} disabled={state === "busy"} className="text-thread underline-offset-4 hover:underline disabled:opacity-50">
+        {state === "busy" ? "Collecting..." : "Report"}
+      </button>
+      {state === "copied" && <span className="text-muted">Copied. Also saved as runs/reports/{id}.md</span>}
+      {state === "failed" && <span className="text-thread">Could not collect the report</span>}
     </div>
   );
 }
