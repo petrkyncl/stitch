@@ -11,17 +11,18 @@ type Props = {
   limits?: EngineState["limits"];
   onApprove: (name: string) => void;
   onRevoke: (name: string) => void;
+  onRollback: (name: string, version: number) => void;
   onBreak: (name: string) => void;
 };
 
 const capName = (r: Run) => r.capability?.replace(/ v\d+$/, "");
 
-export function Insights({ runs, capabilities, granted, limits, onApprove, onRevoke, onBreak }: Props) {
+export function Insights({ runs, capabilities, granted, limits, onApprove, onRevoke, onRollback, onBreak }: Props) {
   return (
     <div className="flex flex-col gap-8">
       <LearnVsReuse runs={runs} />
       <Totals runs={runs} />
-      <Registry capabilities={capabilities} granted={granted} limits={limits} onApprove={onApprove} onRevoke={onRevoke} onBreak={onBreak} />
+      <Registry capabilities={capabilities} granted={granted} limits={limits} onApprove={onApprove} onRevoke={onRevoke} onRollback={onRollback} onBreak={onBreak} />
     </div>
   );
 }
@@ -90,7 +91,7 @@ function Totals({ runs }: { runs: Run[] }) {
   );
 }
 
-function Registry({ capabilities, granted, limits, onApprove, onRevoke, onBreak }: Omit<Props, "runs">) {
+function Registry({ capabilities, granted, limits, onApprove, onRevoke, onRollback, onBreak }: Omit<Props, "runs">) {
   const [apps, setApps] = useState<App[]>([]);
   useEffect(() => { api<App[]>("/api/apps").then(setApps).catch(() => {}); }, [capabilities.length]);
   const appLabel = (pkg?: string) => apps.find(a => a.package === pkg)?.label || pkg?.split(".").pop() || "app";
@@ -132,6 +133,20 @@ function Registry({ capabilities, granted, limits, onApprove, onRevoke, onBreak 
               <span>{c.steps} steps</span>
               <span>{repaired ? `Version ${c.version}, repaired after an app change` : `Version ${c.version}`}</span>
             </div>
+
+            {repaired && (
+              // Every version is kept; an earlier one can be made the one that runs again.
+              <div className="flex flex-wrap items-center gap-1.5 text-sm">
+                <span className="text-muted">Versions</span>
+                {[...new Set((c.history || []).map(h => h.version))].sort((a, b) => a - b).map(v => (
+                  <button key={v} type="button" disabled={v === c.version} onClick={() => onRollback(c.name, v)}
+                    title={v === c.version ? "Runs now" : `Roll back to version ${v}`}
+                    className={`rounded-md px-2 py-0.5 ${v === c.version ? "bg-night-3 text-flesh" : "text-muted hover:bg-night-3 hover:text-flesh"}`}>
+                    v{v}{v === c.version ? " now" : ""}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {asks && (
               // The one right Stitch never grants itself: set it ahead of time, take it back any time.

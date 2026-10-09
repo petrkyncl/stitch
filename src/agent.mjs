@@ -419,6 +419,18 @@ export class Agent {
     this.emit('registry', { capabilities: this.registry.summary() });
   }
 
+  // Roll back: an earlier version becomes the one that runs, and the history says so. Nothing is deleted, so rolling
+  // forward again is another rollback.
+  async rollback(name, version) {
+    const cur = this.registry.get(name);
+    if (!cur) throw new Error(`No capability ${name}`);
+    const old = await this.registry.version(name, Number(version)).catch(() => null);
+    if (!old) throw new Error(`${name} has no version ${version}`);
+    const back = { ...old, runs: cur.runs, history: [...(cur.history || []), { version: old.version, reason: `rolled back from v${cur.version} by a person`, at: new Date().toISOString() }] };
+    await this.registry.save(back);
+    this.emit('registry', { capabilities: this.registry.summary() });
+  }
+
   // Take back an "always allow": the capability asks again before every run.
   async revoke(name) {
     const cap = this.registry.get(name);

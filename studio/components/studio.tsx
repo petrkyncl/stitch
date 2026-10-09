@@ -202,6 +202,7 @@ function Workspace() {
             limits={state?.limits}
             onApprove={name => act("/api/approve", { name })}
             onRevoke={name => act("/api/revoke", { name })}
+            onRollback={(name, version) => act("/api/rollback", { name, version })}
             onBreak={name => act("/api/break", { name })}
           />
         </section>

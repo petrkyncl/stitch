@@ -107,6 +107,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, ok ? 200 : 409, { ok, ...(ok ? {} : { error: 'Nothing is waiting for permission' }) });
     }
     if (req.method === 'POST' && url.pathname === '/api/overlay') return json(res, 200, { boxes: await setLiveBoxes((await body(req)).on) });
+    if (req.method === 'POST' && url.pathname === '/api/rollback') { const b = await body(req); await agent.rollback(b.name, b.version); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/revoke') { await agent.revoke((await body(req)).name); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/approve') { await agent.approve((await body(req)).name); return json(res, 200, agent.state()); }
     if (req.method === 'POST' && url.pathname === '/api/break') { await agent.simulateUpdate((await body(req)).name); return json(res, 200, agent.state()); }

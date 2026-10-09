@@ -29,6 +29,11 @@ export class Registry {
     this.caps.set(cap.name, cap);
   }
 
+  // Any version ever installed, as it was saved then.
+  async version(name, v) {
+    return JSON.parse(await readFile(path.join(ROOT, name, `v${v}.json`), 'utf8'));
+  }
+
   get(name) { return this.caps.get(name); }
   all() { return [...this.caps.values()]; }
 
