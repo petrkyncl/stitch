@@ -95,25 +95,30 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
           <Skill run={run} capabilities={capabilities} />
         </div>
 
-      <div className="flex max-w-[52rem] flex-col gap-3 rounded-2xl rounded-tl-md border border-line bg-night-2 p-4">
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <Meta value={secs(elapsed)} label="" />
-          <Meta value={String(run.calls ?? 0)} label={run.calls === 1 ? "model call" : "model calls"} accent={!live && run.calls === 0} />
-          <Meta value={money(run.cost)} label="cost" accent={!live && run.cost === 0} />
-          <Meta value={((run.tokensIn ?? 0) + (run.tokensOut ?? 0)).toLocaleString()} label="tokens" />
-        </div>
-
-        {proof && <p className="text-ok">{proof.text}</p>}
+      {/* What you came for first (the result, the answer, the table, a question for you), then the numbers in one
+          quiet line, and the steps with their screenshots folded away. */}
+      <div className="flex max-w-[46rem] flex-col gap-3 rounded-2xl rounded-tl-md border border-line bg-night-2 px-4 py-3">
+        {live && !waiting && run.events.length > 0 && (
+          <p className="flex items-center gap-2 text-muted"><span className="size-1.5 shrink-0 animate-pulse rounded-full bg-dawn" />{run.events.at(-1)?.text}</p>
+        )}
+        {waiting && ask?.pending && <Permission pending={ask.pending} onDecide={ask.onDecide} />}
+        {!live && proof && <p className="text-ok">{proof.text}</p>}
         {(run.reply || (live && run.events.findLast(e => e.type === "answer")?.text)) && (
           <Answer text={run.reply || run.events.findLast(e => e.type === "answer")?.text || ""} name={run.task} />
         )}
         {run.error && <p className="text-thread">{run.error}</p>}
-
         {run.data && run.data.length > 0 && <DataTable rows={run.data} name={run.task} />}
-        {!live && !run.ok && <Report id={run.id} />}
-        <Filmstrip events={run.events} live={live} />
-        <Steps events={run.events} />
-        {waiting && ask?.pending && <Permission pending={ask.pending} onDecide={ask.onDecide} />}
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
+          <span className="tabular-nums text-flesh">{secs(elapsed)}</span>
+          <span><span className={`tabular-nums ${!live && run.calls === 0 ? "text-ok" : "text-flesh"}`}>{run.calls ?? 0}</span> {run.calls === 1 ? "model call" : "model calls"}</span>
+          <span className={`tabular-nums ${!live && run.cost === 0 ? "text-ok" : "text-flesh"}`}>{money(run.cost)}</span>
+          <span><span className="tabular-nums text-flesh">{((run.tokensIn ?? 0) + (run.tokensOut ?? 0)).toLocaleString()}</span> tokens</span>
+          <span className="flex-1" />
+          {!live && !run.ok && <Report id={run.id} />}
+        </div>
+
+        <Details events={run.events} live={live} />
       </div>
       </div>
     </div>
@@ -146,19 +151,9 @@ function Skill({ run, capabilities }: { run: Run; capabilities: Capability[] }) 
   );
 }
 
-function Meta({ value, label, accent }: { value: string; label: string; accent?: boolean }) {
-  return (
-    <span className="flex items-baseline gap-1.5">
-      <span className={`font-mono text-lg font-semibold tabular-nums ${accent ? "text-ok" : "text-flesh"}`}>{value}</span>
-      {label && <span className="text-sm text-muted">{label}</span>}
-    </span>
-  );
-}
-
-// The last three steps, the rest on request, so a running task does not grow the chat line by line.
+// Every step of the run, inside the folded details.
 function Steps({ events }: { events: RunEvent[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? events : events.slice(-3);
+  const visible = events;
   if (!events.length) return null;
   return (
     <div className="flex flex-col gap-2 border-t border-line pt-3">
@@ -171,11 +166,6 @@ function Steps({ events }: { events: RunEvent[] }) {
           </li>
         ))}
       </ol>
-      {events.length > 3 && (
-        <button type="button" onClick={() => setExpanded(x => !x)} className="self-start font-mono text-xs text-muted underline-offset-4 hover:text-flesh hover:underline">
-          {expanded ? "Show fewer steps" : `Show all ${events.length} steps`}
-        </button>
-      )}
     </div>
   );
 }
@@ -365,5 +355,27 @@ function Answer({ text, name }: { text: string; name: string }) {
       </div>
       <p className="whitespace-pre-wrap">{text}</p>
     </figure>
+  );
+}
+
+// Steps and screenshots, folded by default: most of the time you want the result, not the replay.
+function Details({ events, live }: { events: RunEvent[]; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!events.length) return null;
+  const shots = events.filter(e => e.frame).length;
+  return (
+    <div className="flex flex-col gap-3 border-t border-line pt-2">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="flex items-center gap-1.5 self-start text-sm text-muted hover:text-flesh">
+        <svg viewBox="0 0 24 24" className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6" /></svg>
+        {events.length} steps{shots ? ` and ${shots} screenshots` : ""}
+      </button>
+      {open && (
+        <>
+          <Filmstrip events={events} live={live} />
+          <Steps events={events} />
+        </>
+      )}
+    </div>
   );
 }
