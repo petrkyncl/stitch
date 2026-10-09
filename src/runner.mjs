@@ -152,6 +152,10 @@ export async function run(cap, params, { emit, allowExternal = false, confirm = 
       await phone.tap(node);
       if (s.external) irreversible = true;
       await phone.settle(pkg);
+      // A tap that opened something new (a dialog that is still zooming in) gets a moment before the next tap, which
+      // would otherwise land where the element is going to be: on Google Clock's dial it hit the minutes, giving 12:35.
+      const after = (await phone.observe(pkg)).nodes.map(phone.label).join('|');
+      if (after !== seen.map(phone.label).join('|')) await phone.sleep(350);
     } else if (s.op === 'long_press') {
       say(`long press "${s.item ? phone.label(node) : sel.labelHas || s.label}"`);
       await phone.nodeAction(node, 'long_click');

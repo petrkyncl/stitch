@@ -205,6 +205,8 @@ export function validate(spec, task, trace, expect) {
   }
   if (got) {
     for (const p of params) if (!(p in got)) problems.push(`pattern does not capture param "${p}" and it has no default`);
+    // A value the request gives that is no param would be ignored: "7:35" set as 12:35.
+    for (const [k, v] of Object.entries(matched)) if (!params.includes(k)) problems.push(`the pattern captures "${k}" (${v}) but there is no param "${k}", so the program would ignore it; add it and use it in a step`);
     const values = Object.values(got).filter(v => String(v).length > 0);
     // Label templates only make sense on steps that touch an element.
     for (const k of Object.keys(spec.targets || {})) if (!['tap', 'long_press'].includes(trace[Number(k)]?.op)) delete spec.targets[k];
