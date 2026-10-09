@@ -114,10 +114,12 @@ export function serveStream(req, res) {
   res.write('--frame\r\n');
   viewers.add(res);
   clearTimeout(idleTimer);
-  if (lastFrame) send(res, lastFrame);
+  // Browsers draw a part once the next one begins, so the newest frame goes out twice: a new viewer sees the screen
+  // at once, even while the stream is still waking up.
+  if (lastFrame) { send(res, lastFrame); send(res, lastFrame); }
   start();
   req.on('close', () => {
     viewers.delete(res);
-    if (!viewers.size) idleTimer = setTimeout(stop, 5000);
+    if (!viewers.size) idleTimer = setTimeout(stop, 30000); // stays warm for switching back and forth
   });
 }
