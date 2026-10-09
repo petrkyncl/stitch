@@ -55,6 +55,7 @@ export class Agent {
     this.registry = registry;
     this.emit = emit;
     this.session = 1;
+    this.chat = 1; // a thread of requests; everything before chats existed is chat 1
     this.runs = [];
     this.busy = false;
   }
@@ -65,16 +66,19 @@ export class Agent {
       const saved = JSON.parse(await readFile(HISTORY, 'utf8'));
       this.runs = saved.runs || [];
       this.session = saved.session || 1;
+      this.chat = saved.chat || 1;
     } catch { /* first start */ }
     return this;
   }
 
   async saveHistory() {
     await mkdir('runs', { recursive: true });
-    await writeFile(HISTORY, JSON.stringify({ session: this.session, runs: this.runs.slice(-200) }, null, 1));
+    await writeFile(HISTORY, JSON.stringify({ session: this.session, chat: this.chat, runs: this.runs.slice(-200) }, null, 1));
   }
 
+  // A new chat starts a new session too: fresh memory, and only what is on disk carries over.
   async newSession() {
+    this.chat += 1;
     this.session += 1;
     await this.registry.load(); // nothing carries over except what is on disk
     await this.saveHistory();
@@ -86,7 +90,7 @@ export class Agent {
     if (this.busy) throw new Error('Stitch is already working on a task');
     this.busy = true;
     const meter = new Meter();
-    const record = { id: `${Date.now()}`, session: this.session, task, app, at: Date.now(), events: [] };
+    const record = { id: `${Date.now()}`, chat: this.chat, session: this.session, task, app, at: Date.now(), events: [] };
     this.current = record;
     let frames = 0;
     this.stopRequested = false;
@@ -362,6 +366,6 @@ export class Agent {
   }
 
   state() {
-    return { session: this.session, busy: this.busy, current: this.current, pending: this.pending || null, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
+    return { session: this.session, chat: this.chat, busy: this.busy, current: this.current, pending: this.pending || null, runs: this.runs, capabilities: this.registry.summary(), granted: GRANTED };
   }
 }

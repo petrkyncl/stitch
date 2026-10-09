@@ -39,7 +39,7 @@ function DevicePicker() {
       </button>
       {open && (
         <div role="listbox" aria-label="Device" className="absolute top-full right-0 z-40 mt-2 flex w-80 flex-col overflow-hidden rounded-xl border border-line bg-night-2 py-1 font-sans shadow-2xl">
-          <p className="px-3 pt-2 pb-1 font-mono text-[10px] tracking-wider text-muted uppercase">Devices</p>
+          <p className="px-3 pt-2 pb-1 text-xs text-muted">Devices</p>
           {DEVICES.map(d => <Option key={d.id} d={d} active={view === "one" && d.id === device.id} onPick={() => pick(d.id)} />)}
           <div className="my-1 border-t border-line" />
           <button type="button" onClick={() => { goTo({ view: "all" }); setOpen(false); }}
@@ -68,7 +68,7 @@ function Option({ d, active, onPick }: { d: DeviceDef; active: boolean; onPick: 
 }
 
 const describe = (s: Device | null) =>
-  !s ? "checking" : s.offline ? "not running" : !s.connected ? "engine up, no device" : `${s.model} · Android ${s.android}`;
+  !s ? "checking" : s.offline ? "not running" : !s.connected ? "engine up, no device" : `${s.model}, Android ${s.android}`;
 
 export function StateDot({ status }: { status: Device | null }) {
   const c = !status ? "bg-muted/50" : status.connected ? "bg-ok shadow-[0_0_8px] shadow-ok" : status.offline ? "bg-line" : "bg-thread";

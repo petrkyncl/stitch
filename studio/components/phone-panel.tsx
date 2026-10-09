@@ -72,7 +72,7 @@ function Status({ device }: { device: Device | null }) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 font-mono text-xs">
       <Pill tone="ok"><Dot ok /> {device.transport}</Pill>
-      <Pill>{device.model} · Android {device.android}</Pill>
+      <Pill>{device.model}, Android {device.android}</Pill>
       <Pill tone={(device.battery ?? 100) < 20 && !device.charging ? "bad" : undefined}>Battery {device.battery}%{device.charging ? ", charging" : ""}</Pill>
       <Pill tone={device.hands ? "ok" : "warn"}>{device.hands ? "Hands on" : "Hands off, using adb"}</Pill>
     </div>

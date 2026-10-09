@@ -33,12 +33,9 @@ export default function Studio() {
 
 function Header({ children }: { children: React.ReactNode }) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-dashed border-thread px-8 py-4">
-      <div className="flex items-baseline gap-4">
-        <span className="font-display text-5xl leading-none font-black uppercase">Stitch</span>
-        <span className="text-muted">grows new limbs, not new privileges</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-3 font-mono text-sm">{children}</div>
+    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line px-6">
+      <span className="font-display text-2xl leading-none font-black">Stitch</span>
+      <div className="flex flex-wrap items-center gap-3 text-sm">{children}</div>
     </header>
   );
 }
@@ -79,27 +76,27 @@ function Workspace() {
   };
   // Each session is a chat: a fresh memory, its own thread. Older chats can be read again; asking returns to the current one.
   const [viewing, setViewing] = useState<number | null>(null);
-  const current = state?.session ?? 1;
+  const current = state?.chat ?? 1;
   const shown = viewing ?? current;
+  const chatTitle = (state?.runs ?? []).find(r => (r.chat ?? 1) === shown)?.task ?? "New chat";
   const act = (path: string, body?: unknown) => api(path, body ?? {}).then(refresh).catch(err => setError(err.message));
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-base">
-      <Header>
-        <DeviceBar />
-        {offline && <Chip tone="bad">Engine offline</Chip>}
-        <Chip tone={state && !state.hasKey ? "bad" : undefined}>
-          {state ? (state.exploreModel && state.exploreModel !== state.model ? `learns with ${state.exploreModel}, runs on ${state.model}` : state.model) : "model"}
-        </Chip>
-      </Header>
-
-      <div className="flex min-h-0 flex-1">
-      <Sidebar runs={state?.runs ?? []} current={current} shown={shown} busy={busy}
+    <div className="flex h-full min-h-0 text-base">
+      <Sidebar runs={state?.runs ?? []} current={current} shown={shown} busy={busy} models={state}
         onPick={s => setViewing(s === current ? null : s)} onNew={() => { setViewing(null); act("/api/session"); }} />
+      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line px-6">
+        <span className="truncate font-medium">{chatTitle}</span>
+        <div className="flex items-center gap-3 text-sm">
+          {offline && <Chip tone="bad">Engine offline</Chip>}
+          <DeviceBar />
+        </div>
+      </div>
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)] 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.8fr)_minmax(340px,0.75fr)]">
         <section className="flex min-h-0 flex-col gap-4" aria-label="Chat with the agent">
           <div className="min-h-0 flex-1 overflow-y-auto pr-2">
-            <Chat runs={(state?.runs ?? []).filter(r => r.session === shown)} live={shown === current ? live : null} sessions={[]} now={now} capabilities={state?.capabilities ?? []}
+            <Chat runs={(state?.runs ?? []).filter(r => (r.chat ?? 1) === shown)} live={shown === current ? live : null} sessions={[]} now={now} capabilities={state?.capabilities ?? []}
               pending={state?.pending ?? null} onDecide={decision => act("/api/permission", { decision })} />
           </div>
           <form onSubmit={submit} className="flex flex-col gap-1 rounded-2xl border border-line bg-night-2 px-3 pt-2.5 pb-2 transition-colors focus-within:border-dawn/50">
@@ -176,29 +173,42 @@ function Examples({ onPick }: { onPick: (text: string) => void }) {
   );
 }
 
-// The chats, ChatGPT style: a left sidebar with a new chat on top and every chat below, newest first. Each chat is a
-// session (fresh memory; learned capabilities stay). Picking an older one shows it; asking continues the current one.
-function Sidebar({ runs, current, shown, busy, onPick, onNew }: { runs: Run[]; current: number; shown: number; busy: boolean; onPick: (s: number) => void; onNew: () => void }) {
+// The chats, ChatGPT style: the name on top, a new chat, then every chat, newest first. A new chat also starts a
+// fresh session (memory cleared; learned capabilities stay on disk). Picking an older chat shows it; asking always
+// continues the current one.
+function Sidebar({ runs, current, shown, busy, models, onPick, onNew }: {
+  runs: Run[]; current: number; shown: number; busy: boolean; models: { model: string; exploreModel?: string } | null;
+  onPick: (c: number) => void; onNew: () => void;
+}) {
   const chats = new Map<number, Run[]>();
-  for (const r of runs) chats.set(r.session, [...(chats.get(r.session) ?? []), r]);
+  for (const r of runs) chats.set(r.chat ?? 1, [...(chats.get(r.chat ?? 1) ?? []), r]);
   if (!chats.has(current)) chats.set(current, []);
   const list = [...chats.entries()].sort((a, b) => b[0] - a[0]);
+  const name = (m?: string) => (m || "").replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/^./, c => c.toUpperCase());
   return (
-    <aside aria-label="Chats" className="hidden w-64 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-night-2/40 px-3 py-4 lg:flex">
-      <button type="button" onClick={onNew} disabled={busy}
-        className="mb-3 flex items-center gap-2.5 rounded-lg px-3 py-2 text-left hover:bg-night-3 disabled:opacity-50">
-        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
-        New chat
-      </button>
-      <p className="px-3 pb-1 font-mono text-[11px] tracking-wider text-muted uppercase">Chats</p>
-      {list.map(([s, rs]) => (
-        <button key={s} type="button" onClick={() => onPick(s)} aria-current={s === shown ? "page" : undefined}
-          title={rs[0]?.task ?? "New chat"}
-          className={`flex flex-col rounded-lg px-3 py-2 text-left ${s === shown ? "bg-night-3 text-flesh" : "text-flesh/80 hover:bg-night-3/60"}`}>
-          <span className="truncate text-sm">{rs[0]?.task ?? "New chat"}</span>
-          <span className="text-xs text-muted">{rs.length ? `${rs.length} ${rs.length === 1 ? "task" : "tasks"} · ${new Date(rs[0].at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}` : "empty"}{s === current ? " · now" : ""}</span>
+    <aside aria-label="Chats" className="hidden w-64 shrink-0 flex-col border-r border-line bg-night-2/40 lg:flex">
+      <div className="flex h-14 shrink-0 items-center px-5">
+        <span className="font-display text-2xl leading-none font-black">Stitch</span>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
+        <button type="button" onClick={onNew} disabled={busy}
+          className="mb-4 flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-night-3 disabled:opacity-50">
+          <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+          New chat
         </button>
-      ))}
+        <p className="px-3 pb-1.5 text-xs text-muted">Chats</p>
+        {list.map(([c, rs]) => (
+          <button key={c} type="button" onClick={() => onPick(c)} aria-current={c === shown ? "page" : undefined} title={rs[0]?.task ?? "New chat"}
+            className={`truncate rounded-lg px-3 py-2 text-left text-sm ${c === shown ? "bg-night-3 text-flesh" : "text-flesh/80 hover:bg-night-3/60"}`}>
+            {rs[0]?.task ?? "New chat"}
+          </button>
+        ))}
+      </div>
+      {models?.model && (
+        <p className="border-t border-line px-5 py-3 text-xs text-muted">
+          {models.exploreModel && models.exploreModel !== models.model ? <>Learns with {name(models.exploreModel)}<br />Runs on {name(models.model)}</> : name(models.model)}
+        </p>
+      )}
     </aside>
   );
 }

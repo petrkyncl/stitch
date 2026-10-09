@@ -43,7 +43,7 @@ export function AppPicker({ value, onChange }: { value: string | null; onChange:
             {shown.map((a, i) => (
               <div key={a.package}>
                 {(i === 0 || shown[i - 1].system !== a.system) && (
-                  <p className="px-3 pt-3 pb-1 font-mono text-[10px] tracking-wider text-muted uppercase">{a.system ? "Preinstalled" : "Your apps"}</p>
+                  <p className="px-3 pt-3 pb-1 text-xs text-muted">{a.system ? "Preinstalled" : "Your apps"}</p>
                 )}
                 <Item pkg={a.package} label={a.label} active={a.package === value} onClick={() => { onChange(a.package); setOpen(false); setQ(""); }} />
               </div>

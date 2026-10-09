@@ -47,7 +47,7 @@ export function Chat({ runs, live, sessions, now, pending, onDecide, capabilitie
     return (
       <div className="grid flex-1 place-items-center px-6 text-center">
         <div className="flex max-w-md flex-col gap-3">
-          <p className="font-display text-4xl font-black uppercase">Ask for something it can&apos;t do yet</p>
+          <p className="text-3xl font-semibold">Ask for something it can&apos;t do yet</p>
           <p className="text-muted">Stitch starts with only tap, type and read the screen. The first time, it explores the app and writes the capability. Every time after, it runs that code with zero model calls.</p>
         </div>
       </div>
@@ -88,7 +88,7 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px] tracking-wider uppercase ${outcome.tone}`}>
+          <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${outcome.tone}`}>
             {live && <span className="size-1.5 animate-pulse rounded-full bg-dawn" />}
             {outcome.label}
           </span>
@@ -106,7 +106,7 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
         {proof && <p className="text-ok">{proof.text}</p>}
         {(run.reply || (live && run.events.findLast(e => e.type === "answer")?.text)) && (
           <figure className="flex flex-col gap-1.5 rounded-xl border-l-2 border-dawn bg-night px-4 py-3">
-            <figcaption className="font-mono text-xs tracking-wider text-muted uppercase">The app answered</figcaption>
+            <figcaption className="text-sm text-muted">The app answered</figcaption>
             <p className="whitespace-pre-wrap">{run.reply || run.events.findLast(e => e.type === "answer")?.text}</p>
           </figure>
         )}
@@ -142,7 +142,7 @@ function Skill({ run, capabilities }: { run: Run; capabilities: Capability[] }) 
           {i > 0 && <span aria-hidden>then</span>}
           {p.app && <AppIcon pkg={p.app} label={p.title} size={18} />}
           <span className="text-flesh">{p.title}</span>
-          {p.version && <span>· {p.version}</span>}
+          {p.version && <span>{p.version}</span>}
         </span>
       ))}
     </span>
@@ -169,8 +169,8 @@ function Steps({ events }: { events: RunEvent[] }) {
         {visible.map((e, i) => (
           <li key={i} className="grid grid-cols-[14px_84px_minmax(0,1fr)] items-baseline gap-2 text-[15px]">
             <span className={`size-2 translate-y-[-1px] rounded-full ${DOT[e.kind || e.type] || "bg-muted"}`} />
-            <span className="font-mono text-xs tracking-wider text-muted uppercase">{e.kind || e.type}</span>
-            <span className="break-words">{e.text}{e.why && <span className="text-muted"> · {e.why}</span>}</span>
+            <span className="text-sm text-muted capitalize">{e.kind || e.type}</span>
+            <span className="break-words">{e.text}{e.why && <span className="block text-sm text-muted">{e.why}</span>}</span>
           </li>
         ))}
       </ol>
@@ -212,8 +212,8 @@ function Filmstrip({ events, live }: { events: RunEvent[]; live: boolean }) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={engineUrl() + current.frame} alt={current.text || "step"} className="max-h-[80vh] w-auto rounded-2xl border border-line" />
               <figcaption className="max-w-xl text-center">
-                <span className="font-mono text-xs tracking-wider text-muted uppercase">Step {(open ?? 0) + 1} of {shots.length} · {current.kind || current.type}</span>
-                <p className="text-lg">{current.text}{current.why && <span className="text-muted"> · {current.why}</span>}</p>
+                <span className="text-sm text-muted">Step {(open ?? 0) + 1} of {shots.length}</span>
+                <p className="text-lg">{current.text}{current.why && <span className="block text-base text-muted">{current.why}</span>}</p>
               </figcaption>
             </figure>
             <button type="button" aria-label="Next step" disabled={open === shots.length - 1} onClick={() => setOpen(o => Math.min((o ?? 0) + 1, shots.length - 1))}
@@ -239,7 +239,7 @@ function DataTable({ rows, name }: { rows: Record<string, string>[]; name: strin
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-xs tracking-wider text-muted uppercase">{rows.length} rows</span>
+        <span className="text-sm text-muted">{rows.length} rows</span>
         <button type="button" onClick={csv} className="rounded-lg bg-dawn px-3 py-1.5 text-sm font-semibold text-night">Download CSV</button>
       </div>
       <div className="max-h-96 overflow-auto rounded-xl border border-line">
@@ -247,7 +247,7 @@ function DataTable({ rows, name }: { rows: Record<string, string>[]; name: strin
           <thead className="sticky top-0 bg-night-3">
             <tr>
               <th className="px-3 py-2 text-right font-mono text-xs font-normal text-muted">#</th>
-              {cols.map(c => <th key={c} className="px-3 py-2 text-left font-mono text-xs font-normal tracking-wider text-muted uppercase">{c.replace(/_/g, " ")}</th>)}
+              {cols.map(c => <th key={c} className="px-3 py-2 text-left text-xs font-medium text-muted capitalize">{c.replace(/_/g, " ")}</th>)}
             </tr>
           </thead>
           <tbody>

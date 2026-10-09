@@ -51,9 +51,9 @@ function LearnVsReuse({ runs }: { runs: Run[] }) {
         </div>
       )}
       <div className="flex flex-col gap-3">
-        <Bar label="First run, learning" ms={learned.ms} max={max} meta={`${learned.calls} calls · ${money(learned.cost)}`} tone="bg-dawn" />
+        <Bar label="First run, learning" ms={learned.ms} max={max} meta={`${learned.calls} calls, ${money(learned.cost)}`} tone="bg-dawn" />
         {reuse.length > 0
-          ? <Bar label={`Reuse, average of ${reuse.length}`} ms={reuseMs} max={max} meta={`${Math.round(avg("calls"))} calls · ${money(avg("cost"))}`} tone="bg-ok" />
+          ? <Bar label={`Reuse, average of ${reuse.length}`} ms={reuseMs} max={max} meta={`${Math.round(avg("calls"))} calls, ${money(avg("cost"))}`} tone="bg-ok" />
           : <p className="text-sm text-muted">Start a new session and ask again with a different input to see reuse.</p>}
       </div>
     </Section>
@@ -165,7 +165,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-mono text-xs tracking-[.16em] text-thread uppercase">{title}</h2>
+        <h2 className="font-semibold">{title}</h2>
         {note && <span className="font-mono text-xs text-muted">{note}</span>}
       </div>
       {children}

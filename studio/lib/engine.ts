@@ -60,6 +60,7 @@ export type RunEvent = { type: string; kind?: string; text?: string; why?: strin
 
 export type Run = MeterSnapshot & {
   id: string;
+  chat?: number;
   session: number;
   task: string;
   path?: RunPath;
@@ -101,6 +102,7 @@ export type Decision = "once" | "always" | "deny";
 
 export type EngineState = {
   session: number;
+  chat?: number;
   busy: boolean;
   current: Run | null;
   pending: Pending | null;
