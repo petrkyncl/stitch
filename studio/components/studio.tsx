@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, engineUrl, usePlace, type Decision, type Run } from "@/lib/engine";
+import { api, DEVICES, engineUrl, usePlace, type Decision, type Run } from "@/lib/engine";
 import { DeviceBar } from "./device-bar";
 import { Fleet, EMULATORS } from "./fleet";
 import { useEngine } from "./use-engine";
@@ -203,6 +203,12 @@ function Workspace() {
             onApprove={name => act("/api/approve", { name })}
             onRevoke={name => act("/api/revoke", { name })}
             onRollback={(name, version) => act("/api/rollback", { name, version })}
+            onReset={() => api("/api/reset", {}).then(() => {
+              // The registry is shared: every other device starts a new chat too and reads the now empty registry.
+              for (const d of DEVICES) if (d.port !== here.port) fetch(engineUrl(d) + "/api/session", { method: "POST" }).catch(() => {});
+              setViewing(null);
+              refresh();
+            }).catch(err => setError(err.message))}
             onBreak={name => act("/api/break", { name })}
           />
         </section>

@@ -12,17 +12,18 @@ type Props = {
   onApprove: (name: string) => void;
   onRevoke: (name: string) => void;
   onRollback: (name: string, version: number) => void;
+  onReset: () => void;
   onBreak: (name: string) => void;
 };
 
 const capName = (r: Run) => r.capability?.replace(/ v\d+$/, "");
 
-export function Insights({ runs, capabilities, granted, limits, onApprove, onRevoke, onRollback, onBreak }: Props) {
+export function Insights({ runs, capabilities, granted, limits, onApprove, onRevoke, onRollback, onReset, onBreak }: Props) {
   return (
     <div className="flex flex-col gap-8">
       <LearnVsReuse runs={runs} />
       <Totals runs={runs} />
-      <Registry capabilities={capabilities} granted={granted} limits={limits} onApprove={onApprove} onRevoke={onRevoke} onRollback={onRollback} onBreak={onBreak} />
+      <Registry capabilities={capabilities} granted={granted} limits={limits} onApprove={onApprove} onRevoke={onRevoke} onRollback={onRollback} onReset={onReset} onBreak={onBreak} />
     </div>
   );
 }
@@ -91,13 +92,14 @@ function Totals({ runs }: { runs: Run[] }) {
   );
 }
 
-function Registry({ capabilities, granted, limits, onApprove, onRevoke, onRollback, onBreak }: Omit<Props, "runs">) {
+function Registry({ capabilities, granted, limits, onApprove, onRevoke, onRollback, onReset, onBreak }: Omit<Props, "runs">) {
   const [apps, setApps] = useState<App[]>([]);
   useEffect(() => { api<App[]>("/api/apps").then(setApps).catch(() => {}); }, [capabilities.length]);
   const appLabel = (pkg?: string) => apps.find(a => a.package === pkg)?.label || pkg?.split(".").pop() || "app";
 
   return (
     <Section title="What it has learned" note={granted ? `Started with ${granted.permissions.join(", ").replace(/_/g, " ")}${limits ? `. At most ${limits.calls} model calls and $${limits.dollars.toFixed(2)} per run` : ""}` : undefined}>
+      {capabilities.length > 0 && <StartFromZero count={capabilities.length} onReset={onReset} />}
       {!capabilities.length && <p className="text-muted">Nothing yet. Stitch starts able to read the screen, tap and type, nothing more.</p>}
       {capabilities.map(c => {
         const needsApproval = c.status === "held";
@@ -203,6 +205,25 @@ function Small({ value, label }: { value: string; label: string }) {
     <div className="flex flex-col">
       <span className="font-display text-3xl leading-none font-black tabular-nums">{value}</span>
       <span className="mt-1 font-mono text-xs text-muted">{label}</span>
+    </div>
+  );
+}
+
+// Forget everything learned, to show learning from nothing. The capabilities go to an archive, so nothing is lost.
+function StartFromZero({ count, onReset }: { count: number; onReset: () => void }) {
+  const [sure, setSure] = useState(false);
+  if (!sure) {
+    return (
+      <button type="button" onClick={() => setSure(true)} className="self-start text-sm text-muted underline-offset-4 hover:text-flesh hover:underline">
+        Start from zero
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-night px-3 py-2 text-sm">
+      <span>Move all {count} capabilities to the archive and start a new chat on every device?</span>
+      <button type="button" onClick={() => { setSure(false); onReset(); }} className="rounded-lg bg-dawn px-3 py-1 font-medium text-night">Start from zero</button>
+      <button type="button" onClick={() => setSure(false)} className="rounded-lg px-3 py-1 text-muted hover:bg-night-3 hover:text-flesh">Cancel</button>
     </div>
   );
 }

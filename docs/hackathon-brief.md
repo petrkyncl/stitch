@@ -46,3 +46,8 @@ Code freeze at sunrise, **07:14** (snapshot of the latest commit). Public GitHub
 real, simulated, next. Submission form: project name, one-line pitch, what it does (3000), what works end-to-end (2000),
 what is simulated, missing or fragile (2000), stack. Pick the topic on the team page first.
 Side prize (optional): Best ElevenLabs Use (give the agent a voice).
+
+## From the organizers (04:17)
+- **Video (90 s):** an explainer for the jury of what you built over the night. Can be more technical and descriptive.
+- **Pitch on stage (60 s):** your idea, why it is relevant, original, and the value it delivers. Over forty 1-minute
+  pitches in a row, so focus on the 1 or 2 strongest messages that will stick with the jury.

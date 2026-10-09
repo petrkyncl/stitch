@@ -89,6 +89,14 @@ export class Agent {
     await writeFile(HISTORY, JSON.stringify({ session: this.session, chat: this.chat, runs: this.runs.slice(-200) }, null, 1));
   }
 
+  // Start from zero: every learned capability goes to the archive (nothing is deleted) and a new chat begins.
+  async reset() {
+    if (this.busy) throw new Error('Stitch is working on a task');
+    const done = await this.registry.archive();
+    await this.newSession();
+    return done;
+  }
+
   // A new chat starts a new session too: fresh memory, and only what is on disk carries over.
   async newSession() {
     this.chat += 1;

@@ -1,5 +1,5 @@
 // Installed capabilities live on disk, one folder each, every version kept.
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { matchPatterns } from './compiler.mjs';
 
@@ -27,6 +27,20 @@ export class Registry {
     await writeFile(path.join(dir, 'capability.json'), JSON.stringify(cap, null, 2));
     await writeFile(path.join(dir, `v${cap.version}.json`), JSON.stringify(cap, null, 2));
     this.caps.set(cap.name, cap);
+  }
+
+  // Start from zero without losing anything: every capability moves to registry-archive/<time>/.
+  async archive() {
+    const dest = path.join(path.dirname(ROOT), 'registry-archive', new Date().toISOString().replace(/[:.]/g, '-'));
+    await mkdir(dest, { recursive: true });
+    let moved = 0;
+    for (const dir of await readdir(ROOT)) {
+      if (dir.startsWith('.')) continue;
+      await rename(path.join(ROOT, dir), path.join(dest, dir));
+      moved += 1;
+    }
+    await this.load();
+    return { moved, dest };
   }
 
   // Any version ever installed, as it was saved then.
