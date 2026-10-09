@@ -89,6 +89,7 @@ function stop() {
   if (!pipeline || pipeline.starting) return;
   const { server, sock, ff } = pipeline;
   pipeline = null;
+  lastFrame = null; // a stopped stream must not hand out an old screen as if it were now
   sock.destroy();
   ff.kill('SIGTERM');
   server.kill('SIGTERM');
@@ -102,8 +103,15 @@ function send(res, frame) {
   res.write('\r\n--frame\r\n');
 }
 
-// The newest decoded frame, or null when nobody is watching (the stream only runs for viewers).
+// The newest decoded frame, or null when nobody is watching (the stream only runs for viewers or during a task).
 export const latestFrame = () => lastFrame;
+
+// Keep the video running while a task runs, so its step snapshots are real even with nobody watching the studio.
+export function keepWarm(ms = 60000) {
+  clearTimeout(idleTimer);
+  start();
+  idleTimer = setTimeout(() => { if (!viewers.size) stop(); }, ms);
+}
 
 export function serveStream(req, res) {
   res.writeHead(200, {

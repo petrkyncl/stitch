@@ -70,6 +70,10 @@ export function useEngine() {
           case "registry":
             refresh();
             break;
+          case "frame":
+            // A step's snapshot arrives once it is saved, a moment after the step itself.
+            update(r => ({ ...r, events: r.events.map((x, i) => (i === ev.idx ? { ...x, frame: ev.frame } : x)) }));
+            break;
           case "ask":
             update(r => ({ ...r, ...meter, events: [...r.events, { type: ev.type, kind: ev.kind, text: ev.text, why: ev.why, frame: ev.frame, at: ev.at }] }));
             refresh(); // brings the pending request, so the prompt shows its buttons

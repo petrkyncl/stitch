@@ -40,7 +40,7 @@ function combine(results, total) {
     error: failed?.error,
   };
 }
-import { latestFrame } from './stream.mjs';
+import { latestFrame, keepWarm } from './stream.mjs';
 
 const FRAME_KINDS = new Set(['explore', 'run', 'held', 'done', 'broken', 'blocked', 'test', 'ask']);
 
@@ -93,21 +93,36 @@ export class Agent {
     const record = { id: `${Date.now()}`, chat: this.chat, session: this.session, task, app, at: Date.now(), events: [] };
     this.current = record;
     let frames = 0;
+    let pendingShot = null;
+    // The snapshot belongs to an event already shown; once it is on disk, the event gets it and the studio is told.
+    const shoot = () => {
+      if (pendingShot === null) return;
+      const { n, idx } = pendingShot;
+      pendingShot = null;
+      const jpg = latestFrame();
+      if (!jpg) return;
+      const frame = `/api/frame/${record.id}/${n}.jpg`;
+      mkdir(`runs/frames/${record.id}`, { recursive: true })
+        .then(() => writeFile(`runs/frames/${record.id}/${n}.jpg`, jpg))
+        .then(() => { if (record.events[idx]) record.events[idx].frame = frame; this.emit('frame', { runId: record.id, idx, frame }); })
+        .catch(() => {});
+    };
     this.stopRequested = false;
     const emit = (type, data = {}) => {
       // Every step reports progress through here before it acts, so a stop lands before the next action.
       if (this.stopRequested && !['error', 'run', 'stopped', 'blocked'].includes(type)) throw new StoppedError();
       // Keep what the phone showed at this step, straight from the live video, so the chat can replay the run.
-      let frame;
-      const jpg = latestFrame();
-      if (jpg && FRAME_KINDS.has(data.kind || type)) {
-        const n = frames++;
-        frame = `/api/frame/${record.id}/${n}.jpg`;
-        mkdir(`runs/frames/${record.id}`, { recursive: true }).then(() => writeFile(`runs/frames/${record.id}/${n}.jpg`, jpg)).catch(() => {});
+      // A step is announced before it acts, so its snapshot is taken when the next step is announced (the screen
+      // then shows what this step did: the opened app, the typed text). The last one is taken when the run ends.
+      if (FRAME_KINDS.has(data.kind || type)) {
+        shoot();
+        pendingShot = { n: frames++, idx: record.events.length };
+        keepWarm();
       }
-      if (type !== 'task') record.events.push({ type, kind: data.kind, text: data.text, why: data.why, frame, at: Date.now() });
-      this.emit(type, { ...data, frame, runId: record.id, meter: meter.snapshot() });
+      if (type !== 'task') record.events.push({ type, kind: data.kind, text: data.text, why: data.why, at: Date.now() });
+      this.emit(type, { ...data, runId: record.id, meter: meter.snapshot() });
     };
+    keepWarm(); // real snapshots for every step, even with the studio closed
     emit('task', { task, session: this.session, id: record.id });
     try {
       // "Do this and then that" becomes separate tasks, each one routed, run or learned on its own.
@@ -129,6 +144,8 @@ export class Agent {
         emit('error', { text: e.message });
       }
     } finally {
+      await new Promise(r => setTimeout(r, 700)); // the video is a moment behind the phone
+      shoot();
       this.stopRequested = false;
       Object.assign(record, meter.snapshot());
       this.runs.push(record);

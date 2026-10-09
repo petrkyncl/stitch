@@ -105,10 +105,7 @@ function Exchange({ run, live, now, ask, capabilities }: { run: Run; live: boole
 
         {proof && <p className="text-ok">{proof.text}</p>}
         {(run.reply || (live && run.events.findLast(e => e.type === "answer")?.text)) && (
-          <figure className="flex flex-col gap-1.5 rounded-xl border-l-2 border-dawn bg-night px-4 py-3">
-            <figcaption className="text-sm text-muted">The app answered</figcaption>
-            <p className="whitespace-pre-wrap">{run.reply || run.events.findLast(e => e.type === "answer")?.text}</p>
-          </figure>
+          <Answer text={run.reply || run.events.findLast(e => e.type === "answer")?.text || ""} name={run.task} />
         )}
         {run.error && <p className="text-thread">{run.error}</p>}
 
@@ -189,6 +186,17 @@ function Filmstrip({ events, live }: { events: RunEvent[]; live: boolean }) {
   const strip = useRef<HTMLDivElement>(null);
   const shots = events.filter(e => e.frame);
   useEffect(() => { if (live) strip.current?.scrollTo({ left: strip.current.scrollWidth, behavior: "smooth" }); }, [shots.length, live]);
+  // Left and right arrow keys step through, Esc closes.
+  useEffect(() => {
+    if (open === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(null);
+      if (e.key === "ArrowLeft") setOpen(o => Math.max((o ?? 0) - 1, 0));
+      if (e.key === "ArrowRight") setOpen(o => Math.min((o ?? 0) + 1, shots.length - 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, shots.length]);
   if (!shots.length) return null;
   const current = open === null ? null : shots[open];
   return (
@@ -205,20 +213,19 @@ function Filmstrip({ events, live }: { events: RunEvent[]; live: boolean }) {
       </div>
       {current && (
         <div role="dialog" aria-modal="true" onClick={() => setOpen(null)} className="fixed inset-0 z-50 grid place-items-center bg-night/90 p-6">
-          <div onClick={ev => ev.stopPropagation()} className="flex max-h-full items-center gap-6">
-            <button type="button" aria-label="Previous step" disabled={open === 0} onClick={() => setOpen(o => Math.max((o ?? 0) - 1, 0))}
-              className="grid size-12 place-items-center rounded-full border border-line text-2xl disabled:opacity-30">&#8249;</button>
-            <figure className="flex max-h-[90vh] flex-col items-center gap-3">
+          {/* Arrows sit at fixed places on the screen, centered top to bottom, so they never move between steps. */}
+          <Arrow side="left" label="Previous step" disabled={open === 0} onClick={() => setOpen(o => Math.max((o ?? 0) - 1, 0))} />
+          <figure onClick={ev => ev.stopPropagation()} className="flex flex-col items-center gap-3">
+            <div className="h-[78vh] overflow-hidden rounded-2xl border border-line bg-black" style={{ aspectRatio: "1080 / 2340" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={engineUrl() + current.frame} alt={current.text || "step"} className="max-h-[80vh] w-auto rounded-2xl border border-line" />
-              <figcaption className="max-w-xl text-center">
-                <span className="text-sm text-muted">Step {(open ?? 0) + 1} of {shots.length}</span>
-                <p className="text-lg">{current.text}{current.why && <span className="block text-base text-muted">{current.why}</span>}</p>
-              </figcaption>
-            </figure>
-            <button type="button" aria-label="Next step" disabled={open === shots.length - 1} onClick={() => setOpen(o => Math.min((o ?? 0) + 1, shots.length - 1))}
-              className="grid size-12 place-items-center rounded-full border border-line text-2xl disabled:opacity-30">&#8250;</button>
-          </div>
+              <img src={engineUrl() + current.frame} alt={current.text || "step"} className="size-full object-contain" />
+            </div>
+            <figcaption className="h-20 w-[36rem] max-w-[80vw] text-center">
+              <span className="text-sm text-muted">Step {(open ?? 0) + 1} of {shots.length}</span>
+              <p className="text-lg">{current.text}{current.why && <span className="block text-base text-muted">{current.why}</span>}</p>
+            </figcaption>
+          </figure>
+          <Arrow side="right" label="Next step" disabled={open === shots.length - 1} onClick={() => setOpen(o => Math.min((o ?? 0) + 1, shots.length - 1))} />
         </div>
       )}
     </>
@@ -314,5 +321,49 @@ function Report({ id }: { id: string }) {
       {state === "copied" && <span className="text-muted">Copied. Also saved as runs/reports/{id}.md</span>}
       {state === "failed" && <span className="text-thread">Could not collect the report</span>}
     </div>
+  );
+}
+
+function Arrow({ side, label, disabled, onClick }: { side: "left" | "right"; label: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button type="button" aria-label={label} disabled={disabled} onClick={ev => { ev.stopPropagation(); onClick(); }}
+      className={`fixed top-1/2 grid size-12 -translate-y-1/2 place-items-center rounded-full border border-line bg-night-2 text-flesh hover:border-muted disabled:opacity-30 ${side === "left" ? "left-8" : "right-8"}`}>
+      <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d={side === "left" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"} />
+      </svg>
+    </button>
+  );
+}
+
+// What the app answered, with a quiet copy and a download as a text file.
+function Answer({ text, name }: { text: string; name: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => { await navigator.clipboard.writeText(text).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `${name.replace(/[^\w]+/g, "-").toLowerCase().slice(0, 60)}.txt` });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const icon = "grid size-7 place-items-center rounded-md text-muted hover:bg-night-3 hover:text-flesh";
+  return (
+    <figure className="flex flex-col gap-1.5 rounded-xl border-l-2 border-dawn bg-night px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <figcaption className="text-sm text-muted">The app answered</figcaption>
+        <div className="flex items-center gap-0.5">
+          <button type="button" onClick={copy} title={copied ? "Copied" : "Copy"} aria-label="Copy the answer" className={icon}>
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              {copied ? <path d="M5 12l5 5 9-10" /> : <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" /></>}
+            </svg>
+          </button>
+          <button type="button" onClick={download} title="Download as a text file" aria-label="Download the answer" className={icon}>
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <p className="whitespace-pre-wrap">{text}</p>
+    </figure>
   );
 }

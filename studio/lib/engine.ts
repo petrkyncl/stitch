@@ -141,6 +141,7 @@ export type EngineEvent = {
   text?: string;
   why?: string;
   frame?: string;
+  idx?: number; // "frame" events: which step of the run the snapshot belongs to
   kind?: string;
   task?: string;
   session?: number;
