@@ -4,7 +4,7 @@
 Stitch
 
 ## One-line pitch
-A phone agent that learns the app skills it is missing, tests them, installs them and reuses them as code for $0, while its authority never grows without a person.
+Learns the phone skills it lacks, tests and installs them, reuses them for $0. Skills grow; authority does not.
 
 ## What it does (problem, who it is for, how)
 Phone automation today is either hand-written per app (brittle scripts, selectors that break with every update) or an LLM driving the screen every single time (slow, expensive, unpredictable). Stitch is for people and small teams who run the same phone tasks again and again, on one phone or a fleet of devices.
