@@ -138,6 +138,9 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
 
   // The tabs selected now are the screen this capability starts from; runs select them again if the app opens elsewhere.
   const home = await phone.selectedTabs(pkg).catch(() => []);
+  // What the app showed before anything was done: proof of success must not be something that was already there
+  // (an alarm for 6:20 left from before is not a new alarm).
+  const before = (await phone.observe(pkg).catch(() => ({ nodes: [] }))).nodes;
   const trace = [{ op: 'launch', pkg, ...(home.length ? { home } : {}) }];
   const history = [];
   let extractFailures = 0;
@@ -185,6 +188,11 @@ export async function explore({ task, meter, emit, pkg, known = [] }) {
     switch (d.action) {
       case 'done': {
         const proof = provenText(screen.nodes, d.expect);
+        if (proof && !trace.some(t => ['type', 'enter', 'extract'].includes(t.op) || (t.op === 'tap' && t.sel?.templated)) && provenText(before, proof)) {
+          history.push(`done rejected: "${proof}" was already on screen before you started, so it proves nothing. Do the task itself (e.g. add a new one), then answer done`);
+          say(`"${proof}" was there before, so not done yet`);
+          break;
+        }
         if (proof) {
           say(`done, "${proof}" is on screen`);
           return { pkg, trace, expect: proof, held: false };
